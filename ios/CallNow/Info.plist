@@ -2,6 +2,19 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+    <!-- Camera permissions -->
+    <key>NSCameraUsageDescription</key>
+    <string>This app uses the camera to take photos for your profile picture and to send photos in chats.</string>
+
+    <!-- Photo library permissions -->
+    <key>NSPhotoLibraryUsageDescription</key>
+    <string>This app uses the photo library to select photos for your profile picture and to send in chats.</string>
+    <key>NSPhotoLibraryAddUsageDescription</key>
+    <string>This app saves photos to your photo library when you download media from chats.</string>
+
+    <!-- Microphone permissions -->
+    <key>NSMicrophoneUsageDescription</key>
+    <string>This app uses the microphone to record audio messages and for voice/video calls.</string>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
 	<key>CFBundleDisplayName</key>
