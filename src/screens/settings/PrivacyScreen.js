@@ -2,7 +2,7 @@
 
 import { useState, useContext } from "react"
 import { View, Text, StyleSheet, Switch, TouchableOpacity, ScrollView, Alert } from "react-native"
-import { Ionicons } from "@expo/vector-icons"
+import Ionicons from 'react-native-vector-icons/Ionicons';
 import { AuthContext } from "../../context/AuthContext"
 
 const PrivacyScreen = () => {

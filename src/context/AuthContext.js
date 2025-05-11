@@ -3,7 +3,7 @@
 import { createContext, useReducer, useEffect } from "react"
 import AsyncStorage from "@react-native-async-storage/async-storage"
 import * as AuthAPI from "../api/auth"
-import {getDeviceInfo, getUniqueId} from '../utils/device';
+import DeviceInfo from 'react-native-device-info';
 
 // Initial state
 const initialState = {
@@ -38,6 +38,7 @@ const authReducer = (state, action) => {
         token: action.payload.token,
         user: action.payload.user,
         deviceId: action.payload.deviceId,
+        deviceName: action.payload.deviceName,
         error: null,
       }
     case "LOGOUT":
@@ -55,35 +56,20 @@ const authReducer = (state, action) => {
         isLoading: false,
         error: null,
       }
-    case "UPDATE_USER":
-      return {
-        ...state,
-        user: { ...state.user, ...action.payload },
-      }
-    case "AUTH_ERROR":
-      return {
-        ...state,
-        isLoading: false,
-        error: action.payload,
-      }
     default:
       return state
   }
 }
-
-// Provider component
 export const AuthProvider = ({ children }) => {
   const [state, dispatch] = useReducer(authReducer, initialState)
 
-  // Check if user is already logged in
   useEffect(() => {
     const bootstrapAsync = async () => {
       try {
         const token = await AsyncStorage.getItem("token")
         const userString = await AsyncStorage.getItem("user")
         const user = userString ? JSON.parse(userString) : null
-        const deviceId = await getUniqueId()
-
+        const deviceId = await DeviceInfo.getDeviceId();
         dispatch({
           type: "RESTORE_TOKEN",
           payload: { token, user, deviceId },
@@ -100,12 +86,14 @@ export const AuthProvider = ({ children }) => {
     bootstrapAsync()
   }, [])
 
-  // Auth actions
   const authActions = {
     login: async (phoneNumber, password) => {
       try {
-        const deviceId = await getUniqueId()
-        const deviceName = await getDeviceInfo() // You can get actual device name if needed
+        const deviceId = await DeviceInfo.getDeviceId();
+        const deviceName = await DeviceInfo.getDeviceName();
+
+        console.log('Device ID:', deviceId);
+        console.log('Device Name:', deviceName);
 
         const response = await AuthAPI.login(phoneNumber, password, deviceId, deviceName)
 
@@ -151,56 +139,6 @@ export const AuthProvider = ({ children }) => {
       }
     },
 
-    verifyOTP: async (phoneNumber, otp, purpose = "registration") => {
-      try {
-        const response = await AuthAPI.verifyOTP(phoneNumber, otp, purpose)
-
-        if (response.success) {
-          if (purpose === "registration") {
-            await AsyncStorage.setItem("token", response.token)
-            await AsyncStorage.setItem("user", JSON.stringify(response.user))
-
-            const deviceId = await getUniqueId()
-
-            dispatch({
-              type: "LOGIN",
-              payload: {
-                token: response.token,
-                user: response.user,
-                deviceId,
-              },
-            })
-          }
-
-          return { success: true }
-        } else {
-          dispatch({ type: "AUTH_ERROR", payload: response.message })
-          return { success: false, message: response.message }
-        }
-      } catch (error) {
-        const errorMessage = error.response?.data?.message || "OTP verification failed. Please try again."
-        dispatch({ type: "AUTH_ERROR", payload: errorMessage })
-        return { success: false, message: errorMessage }
-      }
-    },
-
-    resendOTP: async (phoneNumber, purpose = "registration") => {
-      try {
-        const response = await AuthAPI.resendOTP(phoneNumber, purpose)
-
-        if (response.success) {
-          return { success: true }
-        } else {
-          dispatch({ type: "AUTH_ERROR", payload: response.message })
-          return { success: false, message: response.message }
-        }
-      } catch (error) {
-        const errorMessage = error.response?.data?.message || "Failed to resend OTP. Please try again."
-        dispatch({ type: "AUTH_ERROR", payload: errorMessage })
-        return { success: false, message: errorMessage }
-      }
-    },
-
     forgotPassword: async (phoneNumber) => {
       try {
         const response = await AuthAPI.forgotPassword(phoneNumber)
@@ -215,52 +153,6 @@ export const AuthProvider = ({ children }) => {
         const errorMessage = error.response?.data?.message || "Password reset request failed. Please try again."
         dispatch({ type: "AUTH_ERROR", payload: errorMessage })
         return { success: false, message: errorMessage }
-      }
-    },
-
-    resetPassword: async (phoneNumber, otp, newPassword) => {
-      try {
-        const response = await AuthAPI.resetPassword(phoneNumber, otp, newPassword)
-
-        if (response.success) {
-          return { success: true }
-        } else {
-          dispatch({ type: "AUTH_ERROR", payload: response.message })
-          return { success: false, message: response.message }
-        }
-      } catch (error) {
-        const errorMessage = error.response?.data?.message || "Password reset failed. Please try again."
-        dispatch({ type: "AUTH_ERROR", payload: errorMessage })
-        return { success: false, message: errorMessage }
-      }
-    },
-
-    updateProfile: async (updates) => {
-      try {
-        const response = await AuthAPI.updateProfile(updates, state.token)
-
-        if (response.success) {
-          await AsyncStorage.setItem("user", JSON.stringify(response.user))
-          dispatch({ type: "UPDATE_USER", payload: response.user })
-          return { success: true }
-        } else {
-          return { success: false, message: response.message }
-        }
-      } catch (error) {
-        const errorMessage = error.response?.data?.message || "Profile update failed. Please try again."
-        return { success: false, message: errorMessage }
-      }
-    },
-
-    logout: async () => {
-      try {
-        await AsyncStorage.removeItem("token")
-        await AsyncStorage.removeItem("user")
-        dispatch({ type: "LOGOUT" })
-        return { success: true }
-      } catch (error) {
-        console.error("Error during logout:", error)
-        return { success: false, message: "Logout failed" }
       }
     },
   }

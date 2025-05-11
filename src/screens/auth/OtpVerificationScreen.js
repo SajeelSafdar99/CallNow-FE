@@ -16,14 +16,41 @@ import { SafeAreaView } from "react-native-safe-area-context"
 import { AuthContext } from "../../context/AuthContext"
 
 const OtpVerificationScreen = ({ route, navigation }) => {
-  const { phoneNumber, purpose = "registration" } = route.params
+  const { phoneNumber, purpose = "registration", fromLogin = false } = route.params
   const [otp, setOtp] = useState(["", "", "", "", "", ""])
   const [isLoading, setIsLoading] = useState(false)
   const [resendDisabled, setResendDisabled] = useState(true)
   const [countdown, setCountdown] = useState(60)
   const { verifyOTP, resendOTP } = useContext(AuthContext)
+  const [initialResendDone, setInitialResendDone] = useState(false)
 
   const inputRefs = useRef([])
+
+  // Auto-trigger resendOTP when coming from login screen
+  useEffect(() => {
+    const autoResendOTP = async () => {
+      if (fromLogin && !initialResendDone) {
+        setIsLoading(true)
+        try {
+          const result = await resendOTP(phoneNumber, purpose)
+          if (result.success) {
+            setInitialResendDone(true)
+            // No need to show an alert since this is automatic
+            console.log("OTP sent automatically")
+          } else {
+            Alert.alert("OTP Send Failed", result.message)
+          }
+        } catch (error) {
+          Alert.alert("Error", "Failed to send OTP. Please try manually.")
+          console.error("Auto resend OTP error:", error)
+        } finally {
+          setIsLoading(false)
+        }
+      }
+    }
+
+    autoResendOTP()
+  }, [fromLogin, phoneNumber, purpose, resendOTP, initialResendDone])
 
   useEffect(() => {
     let interval = null

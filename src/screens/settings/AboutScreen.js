@@ -1,17 +1,17 @@
 import { View, Text, StyleSheet, ScrollView, Image, TouchableOpacity, Linking } from "react-native"
-import { Ionicons } from "@expo/vector-icons"
+import Ionicons from "react-native-vector-icons/Ionicons"
 
 const AboutScreen = () => {
   // Open website
   const openWebsite = () => {
-    Linking.openURL("https://www.whatsapp.com/")
+    Linking.openURL("#")
   }
 
   return (
     <ScrollView style={styles.container}>
       <View style={styles.headerSection}>
         <Image source={require("../../assets/images/splash-logo.png")} style={styles.logo} resizeMode="contain" />
-        <Text style={styles.appName}>WhatsApp Clone</Text>
+        <Text style={styles.appName}>CALLNOW</Text>
         <Text style={styles.appVersion}>Version 1.0.0</Text>
       </View>
 
@@ -20,8 +20,8 @@ const AboutScreen = () => {
 
         <View style={styles.aboutItem}>
           <Text style={styles.aboutText}>
-            This is a WhatsApp clone application built for educational purposes. It demonstrates how to build a
-            real-time messaging app with features like chat, voice/video calls, and media sharing.
+            CallNow is a real-time communication app inspired by WhatsApp, built for learning and experimentation.
+            It features instant messaging, voice and video calling, and media sharing — all designed to deliver a seamless and secure communication experience.
           </Text>
         </View>
 
@@ -72,11 +72,10 @@ const AboutScreen = () => {
 
       <View style={styles.creditsContainer}>
         <Text style={styles.creditsTitle}>Developed By</Text>
-        <Text style={styles.developerName}>Your Name</Text>
-        <Text style={styles.copyright}>© 2023 WhatsApp Clone</Text>
+        <Text style={styles.developerName}>Sajeel Safdar</Text>
+        <Text style={styles.copyright}>© 2025 CALLNOW</Text>
         <Text style={styles.disclaimer}>
-          This is a demo application created for educational purposes only. It is not affiliated with WhatsApp Inc.
-        </Text>
+          This application created solely for final year project and is not affiliated with or endorsed by WhatsApp Inc. or any other company.</Text>
       </View>
     </ScrollView>
   )

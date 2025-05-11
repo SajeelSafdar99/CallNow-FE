@@ -19,8 +19,19 @@ export const SocketProvider = ({ children }) => {
       // Use a safer approach to initialize socket.io
       const initSocket = async () => {
         try {
+
           // Dynamically import socket.io-client only when needed
-          const { io } = await import("socket.io-client")
+          const socketIO = await import("socket.io-client").catch(err => {
+            console.error("Failed to import socket.io-client:", err)
+            return { io: null }
+          })
+
+          if (!socketIO.io) {
+            console.error("Socket.io client failed to load properly")
+            return
+          }
+
+          const { io } = socketIO
 
           // Create socket instance with proper configuration
           socketInstance = io(API_BASE_URL, {

@@ -13,7 +13,7 @@ import {
   ActivityIndicator,
   Switch,
 } from "react-native"
-import { Ionicons } from "@expo/vector-icons"
+import Ionicons from 'react-native-vector-icons/Ionicons';
 import * as ImagePicker from "expo-image-picker"
 import { useNavigation } from "@react-navigation/native"
 import { AuthContext } from "../../context/AuthContext"

@@ -1,22 +1,24 @@
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs"
-import { Ionicon } from "../components/ui/AppIcons"
+import Ionicons from "react-native-vector-icons/Ionicons"
 
 // Screens
 import ChatsListScreen from "../screens/chat/ChatsListScreen"
 import CallHistoryScreen from "../screens/calls/CallHistoryScreen"
-import ProfileScreen from "../screens/profile/ProfileScreen"
-
+import SettingsNavigator from './SettingsNavigator';
+// import ProfileScreen from "../screens/profile/ProfileScreen"
+import ChatNavigator from "../navigation/ChatNavigator"
+import {lightTheme as currentTheme} from '../utils/theme';
 const Tab = createBottomTabNavigator()
 
 const MainTabNavigator = () => {
   return (
     <Tab.Navigator
       screenOptions={{
-        tabBarActiveTintColor: "#128C7E",
-        tabBarInactiveTintColor: "#999999",
+        tabBarActiveTintColor: currentTheme.primary,
+        tabBarInactiveTintColor: currentTheme.placeholder,
         tabBarStyle: {
-          backgroundColor: "#FFFFFF",
-          borderTopColor: "#F0F0F0",
+          backgroundColor: currentTheme.card,
+          borderTopColor: currentTheme.border,
         },
         headerStyle: {
           backgroundColor: "#128C7E",
@@ -29,23 +31,31 @@ const MainTabNavigator = () => {
     >
       <Tab.Screen
         name="Chats"
-        component={ChatsListScreen}
+        component={ChatNavigator}
         options={{
-          tabBarIcon: ({ color, size }) => <Ionicon name="chatbubble" size={size} color={color} />,
+          headerShown: false,
+          tabBarIcon: ({ color, size, focused }) => (
+            <Ionicons
+              name={focused ? "chatbubble" : "chatbubble-outline"}
+              size={size}
+              color={color}
+            />
+          ),
         }}
       />
       <Tab.Screen
         name="Calls"
         component={CallHistoryScreen}
         options={{
-          tabBarIcon: ({ color, size }) => <Ionicon name="call" size={size} color={color} />,
+          tabBarIcon: ({ color, size }) => <Ionicons name="call" size={size} color={color} />,
         }}
       />
       <Tab.Screen
-        name="Profile"
-        component={ProfileScreen}
+        name="Settings"
+        component={SettingsNavigator}
         options={{
-          tabBarIcon: ({ color, size }) => <Ionicon name="person" size={size} color={color} />,
+          headerShown: false, // Hide the header since SettingsNavigator has its own header
+          tabBarIcon: ({ color, size }) => <Ionicons name="settings" size={size} color={color} />,
         }}
       />
     </Tab.Navigator>

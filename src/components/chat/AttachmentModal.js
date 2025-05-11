@@ -1,112 +1,130 @@
-// AttachmentModal.js (in components/chat folder)
-import React from "react"
+import React from 'react';
 import {
+  Modal,
   View,
   Text,
-  Modal,
   TouchableOpacity,
   StyleSheet,
   TouchableWithoutFeedback,
-} from "react-native"
-import { Ionicon } from "../../components/ui/AppIcons"
+  Platform,
+} from 'react-native';
+import Ionicons from 'react-native-vector-icons/Ionicons';
 
-const AttachmentModal = ({ visible, onClose, onPickImage, onTakePhoto, onPickDocument }) => {
+const AttachmentModal = ({ visible, onClose, onPickImage, onTakePhoto, onPickDocument, theme }) => {
   return (
     <Modal
+      animationType="slide"
+      transparent={true}
       visible={visible}
-      transparent
-      animationType="fade"
       onRequestClose={onClose}
     >
       <TouchableWithoutFeedback onPress={onClose}>
         <View style={styles.modalOverlay}>
           <TouchableWithoutFeedback>
-            <View style={styles.modalContent}>
-              <Text style={styles.modalTitle}>Share</Text>
+            <View style={[styles.modalContent, { backgroundColor: theme.card }]}>
+              <Text style={[styles.modalTitle, { color: theme.text }]}>
+                Attach Media
+              </Text>
 
               <View style={styles.optionsContainer}>
-                <TouchableOpacity style={styles.option} onPress={onPickImage}>
-                  <View style={[styles.iconContainer, { backgroundColor: "#4CAF50" }]}>
-                    <Ionicon name="image" size={24} color="#FFFFFF" />
+                <TouchableOpacity
+                  style={[styles.option, { backgroundColor: theme.background }]}
+                  onPress={onTakePhoto}
+                >
+                  <View style={[styles.iconContainer, { backgroundColor: '#4CAF50' }]}>
+                    <Ionicons name="camera" size={24} color="#FFFFFF" />
                   </View>
-                  <Text style={styles.optionText}>Gallery</Text>
+                  <Text style={[styles.optionText, { color: theme.text }]}>Camera</Text>
                 </TouchableOpacity>
 
-                <TouchableOpacity style={styles.option} onPress={onTakePhoto}>
-                  <View style={[styles.iconContainer, { backgroundColor: "#2196F3" }]}>
-                    <Ionicon name="camera" size={24} color="#FFFFFF" />
+                <TouchableOpacity
+                  style={[styles.option, { backgroundColor: theme.background }]}
+                  onPress={onPickImage}
+                >
+                  <View style={[styles.iconContainer, { backgroundColor: '#2196F3' }]}>
+                    <Ionicons name="images" size={24} color="#FFFFFF" />
                   </View>
-                  <Text style={styles.optionText}>Camera</Text>
+                  <Text style={[styles.optionText, { color: theme.text }]}>Photos & Videos</Text>
                 </TouchableOpacity>
 
-                <TouchableOpacity style={styles.option} onPress={onPickDocument}>
-                  <View style={[styles.iconContainer, { backgroundColor: "#FF9800" }]}>
-                    <Ionicon name="document" size={24} color="#FFFFFF" />
+                <TouchableOpacity
+                  style={[styles.option, { backgroundColor: theme.background }]}
+                  onPress={onPickDocument}
+                >
+                  <View style={[styles.iconContainer, { backgroundColor: '#FF9800' }]}>
+                    <Ionicons name="document" size={24} color="#FFFFFF" />
                   </View>
-                  <Text style={styles.optionText}>Document</Text>
+                  <Text style={[styles.optionText, { color: theme.text }]}>Documents</Text>
                 </TouchableOpacity>
               </View>
 
-              <TouchableOpacity style={styles.closeButton} onPress={onClose}>
-                <Text style={styles.closeButtonText}>Cancel</Text>
+              <TouchableOpacity
+                style={[styles.cancelButton, { backgroundColor: theme.background }]}
+                onPress={onClose}
+              >
+                <Text style={[styles.cancelText, { color: theme.primary }]}>
+                  Cancel
+                </Text>
               </TouchableOpacity>
             </View>
           </TouchableWithoutFeedback>
         </View>
       </TouchableWithoutFeedback>
     </Modal>
-  )
-}
+  );
+};
 
 const styles = StyleSheet.create({
   modalOverlay: {
     flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.5)",
-    justifyContent: "flex-end",
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
   },
   modalContent: {
-    backgroundColor: "#FFFFFF",
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     padding: 20,
+    paddingBottom: Platform.OS === 'ios' ? 40 : 20,
   },
   modalTitle: {
     fontSize: 18,
-    fontWeight: "bold",
+    fontWeight: 'bold',
     marginBottom: 20,
-    textAlign: "center",
+    textAlign: 'center',
   },
   optionsContainer: {
-    flexDirection: "row",
-    justifyContent: "space-around",
-    marginBottom: 30,
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    marginBottom: 20,
   },
   option: {
-    alignItems: "center",
+    alignItems: 'center',
+    padding: 15,
+    borderRadius: 10,
+    width: '30%',
   },
   iconContainer: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    justifyContent: "center",
-    alignItems: "center",
-    marginBottom: 10,
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 8,
   },
   optionText: {
+    marginTop: 5,
     fontSize: 14,
-    color: "#333",
+    textAlign: 'center',
   },
-  closeButton: {
-    backgroundColor: "#F0F0F0",
-    borderRadius: 10,
+  cancelButton: {
     padding: 15,
-    alignItems: "center",
+    borderRadius: 10,
+    alignItems: 'center',
   },
-  closeButtonText: {
+  cancelText: {
     fontSize: 16,
-    color: "#128C7E",
-    fontWeight: "bold",
+    fontWeight: 'bold',
   },
-})
+});
 
-export default AttachmentModal
+export default AttachmentModal;

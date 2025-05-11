@@ -1,5 +1,5 @@
-const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || "http://192.168.10.9:5001/api"
-
+const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || "http://192.168.10.19:5001/api"
+const API_BASE_URL_FOR_MEDIA = process.env.REACT_APP_API_BASE_URL_FOR_MEDIA || "http://192.168.10.19:5001"
 const API_ENDPOINTS = {
   // Auth endpoints
   REGISTER: "/auth/register",
@@ -7,8 +7,8 @@ const API_ENDPOINTS = {
   LOGIN: "/auth/login",
   FORGOT_PASSWORD: "/auth/forgot-password",
   RESET_PASSWORD: "/auth/reset-password",
-  REFRESH_TOKEN: "/auth/refresh-token",
   LOGOUT: "/auth/logout",
+  RESEND_OTP: "/auth/resend-otp",
 
   // Profile endpoints
   GET_PROFILE: "/profile/me",
@@ -17,26 +17,27 @@ const API_ENDPOINTS = {
   CHANGE_PASSWORD: "/profile/password",
 
   // Device endpoints
-  REGISTER_DEVICE: "/device/register",
-  UPDATE_DEVICE: "/device/update",
-  REMOVE_DEVICE: "/device/remove",
+  REMOVE_DEVICE: "/devices/:deviceId",
+  GET_DEVICES: "/devices",
+  SET_ACTIVE_DEVICE: "/devices/active/:deviceId",
+  LOGOUT_ALL_DEVICES: "/devices/logout-all",
 
   // Conversation endpoints
-  GET_CONVERSATIONS: "/conversation",
-  CREATE_CONVERSATION: "/conversation",
-  CREATE_GROUP: "/conversation/group",
-  UPDATE_GROUP: "/conversation/group",
-  UPDATE_GROUP_IMAGE: "/conversation/group/image",
-  ADD_PARTICIPANTS: "/conversation/group/participants",
-  REMOVE_PARTICIPANT: "/conversation/group/participants",
-  LEAVE_GROUP: "/conversation/group/leave",
-  CHANGE_GROUP_ADMIN: "/conversation/group/admin",
+  GET_CONVERSATIONS: "/conversations",
+  CREATE_CONVERSATION: "/conversations",
+  CREATE_GROUP: "/conversations/group",
+  UPDATE_GROUP: "/conversations/group",
+  UPDATE_GROUP_IMAGE: "/conversations/group/image",
+  ADD_PARTICIPANTS: "/conversations/group/participants",
+  REMOVE_PARTICIPANT: "/conversations/group/participants",
+  LEAVE_GROUP: "/conversations/group/leave",
+  CHANGE_GROUP_ADMIN: "/conversations/group/admin",
 
   // Message endpoints
-  SEND_MESSAGE: "/message",
-  GET_MESSAGES: "/message",
-  DELETE_MESSAGE: "/message",
-  MARK_AS_DELIVERED: "/message/deliver",
+  SEND_MESSAGE: "/messages",
+  GET_MESSAGES: "/messages",
+  DELETE_MESSAGE: "/messages",
+  MARK_AS_DELIVERED: "/messages/deliver",
 
   // Contact endpoints
   GET_CONTACTS: "/contact",
@@ -48,11 +49,11 @@ const API_ENDPOINTS = {
   GET_BLOCKED_CONTACTS: "/contact/blocked",
 
   // Call endpoints
-  INITIATE_CALL: "/call",
-  UPDATE_CALL_STATUS: "/call/status",
-  GET_CALL_HISTORY: "/call/history",
-  GET_CALL_DETAILS: "/call",
-  DELETE_CALL: "/call",
+  INITIATE_CALL: "/calls",
+  UPDATE_CALL_STATUS: "/calls/status",
+  GET_CALL_HISTORY: "/calls/history",
+  GET_CALL_DETAILS: "/calls",
+  DELETE_CALL: "/calls",
 
   // Group call endpoints
   CREATE_GROUP_CALL: "/group-call",
@@ -84,4 +85,4 @@ const API_ENDPOINTS = {
   GET_REGION_ICE_SERVERS: "/ice-server/region",
 }
 
-export { API_BASE_URL, API_ENDPOINTS }
+export { API_BASE_URL, API_ENDPOINTS, API_BASE_URL_FOR_MEDIA }

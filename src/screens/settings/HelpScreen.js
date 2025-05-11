@@ -1,25 +1,25 @@
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Linking } from "react-native"
-import { Ionicons } from "@expo/vector-icons"
+import Ionicons from 'react-native-vector-icons/Ionicons';
 
 const HelpScreen = () => {
   // Open FAQ website
   const openFAQ = () => {
-    Linking.openURL("https://faq.whatsapp.com/")
+    Linking.openURL("#")
   }
 
   // Open contact us form
   const contactSupport = () => {
-    Linking.openURL("https://www.whatsapp.com/contact/")
+    Linking.openURL("#")
   }
 
   // Open terms of service
   const openTerms = () => {
-    Linking.openURL("https://www.whatsapp.com/legal/terms-of-service")
+    Linking.openURL("#")
   }
 
   // Open privacy policy
   const openPrivacyPolicy = () => {
-    Linking.openURL("https://www.whatsapp.com/legal/privacy-policy")
+    Linking.openURL("#")
   }
 
   return (
@@ -65,11 +65,11 @@ const HelpScreen = () => {
       </View>
 
       <View style={styles.appInfoContainer}>
-        <Text style={styles.appName}>WhatsApp Clone</Text>
+        <Text style={styles.appName}>CALLNOW</Text>
         <Text style={styles.appVersion}>Version 1.0.0</Text>
-        <Text style={styles.copyright}>© 2023 WhatsApp Clone</Text>
+        <Text style={styles.copyright}>© 2025 CALLNOW</Text>
         <Text style={styles.disclaimer}>
-          This is a demo application created for educational purposes only. It is not affiliated with WhatsApp Inc.
+          This application created solely for final year project and is not affiliated with or endorsed by WhatsApp Inc. or any other company.
         </Text>
       </View>
     </ScrollView>

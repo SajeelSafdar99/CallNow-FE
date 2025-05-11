@@ -12,7 +12,7 @@ const api = axios.create({
 // Get all conversations
 export const getConversations = async (token) => {
   try {
-    const response = await api.get(API_ENDPOINTS.CONVERSATIONS, {
+    const response = await api.get(API_ENDPOINTS.GET_CONVERSATIONS, {
       headers: {
         Authorization: `Bearer ${token}`,
       },
@@ -27,7 +27,7 @@ export const getConversations = async (token) => {
 export const getOrCreateConversation = async (recipientId, token) => {
   try {
     const response = await api.post(
-      API_ENDPOINTS.CONVERSATIONS,
+      API_ENDPOINTS.CREATE_CONVERSATION,
       { recipientId },
       {
         headers: {
@@ -44,7 +44,7 @@ export const getOrCreateConversation = async (recipientId, token) => {
 // Get conversation details
 export const getConversationDetails = async (conversationId, token) => {
   try {
-    const response = await api.get(API_ENDPOINTS.GET_CONVERSATION_DETAILS.replace(":conversationId", conversationId), {
+    const response = await api.get(API_ENDPOINTS.GET_CONVERSATIONS.replace(":conversationId", conversationId), {
       headers: {
         Authorization: `Bearer ${token}`,
       },
@@ -159,7 +159,7 @@ export const leaveGroup = async (conversationId, token) => {
 export const makeAdmin = async (conversationId, participantData, token) => {
   try {
     const response = await api.post(
-      API_ENDPOINTS.MAKE_ADMIN.replace(":conversationId", conversationId),
+      API_ENDPOINTS.CHANGE_GROUP_ADMIN.replace(":conversationId", conversationId),
       participantData,
       {
         headers: {
@@ -177,7 +177,7 @@ export const makeAdmin = async (conversationId, participantData, token) => {
 export const removeAdmin = async (conversationId, participantData, token) => {
   try {
     const response = await api.post(
-      API_ENDPOINTS.REMOVE_ADMIN.replace(":conversationId", conversationId),
+      API_ENDPOINTS.CHANGE_GROUP_ADMIN.replace(":conversationId", conversationId),
       participantData,
       {
         headers: {

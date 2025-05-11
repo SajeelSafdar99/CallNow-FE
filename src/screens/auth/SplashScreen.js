@@ -14,9 +14,9 @@ const SplashScreen = () => {
     const timer = setTimeout(() => {
       // Check if user is authenticated and navigate accordingly
       if (state.isAuthenticated) {
-        navigation.replace("Main")
+        navigation.navigate("Main")
       } else {
-        navigation.replace("Login")
+        navigation.navigate("Login")
       }
     }, 2000)
 

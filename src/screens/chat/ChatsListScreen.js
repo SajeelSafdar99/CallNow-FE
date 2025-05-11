@@ -11,12 +11,12 @@ import {
   ActivityIndicator,
   RefreshControl,
 } from "react-native"
-// Replace direct Ionicons import with our safe component
-// import { Ionicons } from "@expo/vector-icons"
-import { Ionicon } from "../../components/ui/AppIcons"
+import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useNavigation } from "@react-navigation/native"
 import { AuthContext } from "../../context/AuthContext"
 import { SocketContext } from "../../context/SocketContext"
+import { ThemeContext } from "../../context/ThemeContext"
+import { getTheme } from "../../utils/theme"
 import * as ConversationsAPI from "../../api/conversations"
 import { formatDate } from "../../utils/formatters"
 import { API_BASE_URL } from "../../config/api" // Import API base URL
@@ -25,6 +25,8 @@ const ChatsListScreen = () => {
   const navigation = useNavigation()
   const { state: authState } = useContext(AuthContext)
   const { socket, isConnected } = useContext(SocketContext)
+  const { theme } = useContext(ThemeContext)
+  const currentTheme = getTheme(theme)
 
   const [conversations, setConversations] = useState([])
   const [isLoading, setIsLoading] = useState(true)
@@ -165,29 +167,42 @@ const ChatsListScreen = () => {
     }
 
     return (
-      <TouchableOpacity style={styles.conversationItem} onPress={() => handleChatPress(item)}>
+      <TouchableOpacity
+        style={[
+          styles.conversationItem,
+          {
+            borderBottomColor: currentTheme.border,
+            backgroundColor: currentTheme.card
+          }
+        ]}
+        onPress={() => handleChatPress(item)}
+      >
         <View style={styles.avatarContainer}>
           {image ? (
             <Image source={{ uri: `${API_BASE_URL}${image}` }} style={styles.avatar} />
           ) : (
-            <View style={[styles.avatar, styles.defaultAvatar]}>
+            <View style={[styles.avatar, styles.defaultAvatar, { backgroundColor: currentTheme.primary }]}>
               <Text style={styles.avatarText}>{name.charAt(0).toUpperCase()}</Text>
             </View>
           )}
         </View>
         <View style={styles.conversationInfo}>
           <View style={styles.conversationHeader}>
-            <Text style={styles.conversationName} numberOfLines={1}>
+            <Text style={[styles.conversationName, { color: currentTheme.text }]} numberOfLines={1}>
               {name}
             </Text>
-            {item.lastMessage && <Text style={styles.conversationTime}>{formatDate(item.lastMessage.createdAt)}</Text>}
+            {item.lastMessage && (
+              <Text style={[styles.conversationTime, { color: currentTheme.placeholder }]}>
+                {formatDate(item.lastMessage.createdAt)}
+              </Text>
+            )}
           </View>
           <View style={styles.conversationFooter}>
-            <Text style={styles.lastMessage} numberOfLines={1}>
+            <Text style={[styles.lastMessage, { color: currentTheme.placeholder }]} numberOfLines={1}>
               {lastMessagePreview || "No messages yet"}
             </Text>
             {unreadCount > 0 && (
-              <View style={styles.unreadBadge}>
+              <View style={[styles.unreadBadge, { backgroundColor: currentTheme.primary }]}>
                 <Text style={styles.unreadCount}>{unreadCount}</Text>
               </View>
             )}
@@ -200,29 +215,40 @@ const ChatsListScreen = () => {
   // Loading state
   if (isLoading) {
     return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#128C7E" />
+      <View style={[styles.loadingContainer, { backgroundColor: currentTheme.background }]}>
+        <ActivityIndicator size="large" color={currentTheme.primary} />
       </View>
     )
   }
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: currentTheme.background }]}>
       <FlatList
         data={conversations}
         renderItem={renderConversationItem}
         keyExtractor={(item) => item._id}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={[currentTheme.primary]}
+            tintColor={currentTheme.primary}
+          />
+        }
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
-            <Text style={styles.emptyText}>No conversations yet</Text>
-            <Text style={styles.emptySubtext}>Start a new chat by tapping the button below</Text>
+            <Text style={[styles.emptyText, { color: currentTheme.primary }]}>No conversations yet</Text>
+            <Text style={[styles.emptySubtext, { color: currentTheme.placeholder }]}>
+              Start a new chat by tapping the button below
+            </Text>
           </View>
         }
       />
-      <TouchableOpacity style={styles.fab} onPress={handleNewChat}>
-        {/* Replace direct Ionicons usage with our safe component */}
-        <Ionicon name="chatbubble-ellipses" size={24} color="#FFFFFF" />
+      <TouchableOpacity
+        style={[styles.fab, { backgroundColor: currentTheme.primary }]}
+        onPress={handleNewChat}
+      >
+        <Ionicons name="chatbubble-ellipses" size={24} color="#FFFFFF" />
       </TouchableOpacity>
     </View>
   )
@@ -231,7 +257,6 @@ const ChatsListScreen = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#FFFFFF",
   },
   loadingContainer: {
     flex: 1,
@@ -242,7 +267,6 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     padding: 15,
     borderBottomWidth: 1,
-    borderBottomColor: "#F0F0F0",
   },
   avatarContainer: {
     marginRight: 15,
@@ -253,7 +277,6 @@ const styles = StyleSheet.create({
     borderRadius: 25,
   },
   defaultAvatar: {
-    backgroundColor: "#128C7E",
     justifyContent: "center",
     alignItems: "center",
   },
@@ -278,7 +301,6 @@ const styles = StyleSheet.create({
   },
   conversationTime: {
     fontSize: 12,
-    color: "#999",
   },
   conversationFooter: {
     flexDirection: "row",
@@ -287,11 +309,9 @@ const styles = StyleSheet.create({
   },
   lastMessage: {
     fontSize: 14,
-    color: "#666",
     flex: 1,
   },
   unreadBadge: {
-    backgroundColor: "#128C7E",
     borderRadius: 12,
     minWidth: 24,
     height: 24,
@@ -314,12 +334,10 @@ const styles = StyleSheet.create({
   emptyText: {
     fontSize: 18,
     fontWeight: "bold",
-    color: "#128C7E",
     marginBottom: 10,
   },
   emptySubtext: {
     fontSize: 14,
-    color: "#666",
     textAlign: "center",
   },
   fab: {
@@ -329,7 +347,6 @@ const styles = StyleSheet.create({
     width: 60,
     height: 60,
     borderRadius: 30,
-    backgroundColor: "#128C7E",
     justifyContent: "center",
     alignItems: "center",
     elevation: 5,
