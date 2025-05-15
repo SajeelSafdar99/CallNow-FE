@@ -1,18 +1,42 @@
 "use client"
 
-import { useContext } from "react"
+import { useContext, useEffect, useState } from "react"
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert } from "react-native"
 import Ionicons from "react-native-vector-icons/Ionicons"
 import { useNavigation } from "@react-navigation/native"
 import { AuthContext } from "../../context/AuthContext"
 import { ThemeContext } from "../../context/ThemeContext"
 import { getTheme } from "../../utils/theme"
+import * as SubscriptionAPI from "../../api/subscription"
 
 const SettingsScreen = () => {
   const navigation = useNavigation()
   const { logout } = useContext(AuthContext)
   const { theme } = useContext(ThemeContext)
   const currentTheme = getTheme(theme)
+  const [hasActiveSubscription, setHasActiveSubscription] = useState(false)
+  const [isLoading, setIsLoading] = useState(true)
+
+  // Fetch subscription status
+  useEffect(() => {
+    const fetchSubscriptionStatus = async () => {
+      try {
+        setIsLoading(true);
+        const { state: authState } = useContext(AuthContext);
+        const response = await SubscriptionAPI.getSubscription(authState.token);
+
+        if (response.success) {
+          setHasActiveSubscription(response.hasActiveSubscription);
+        }
+      } catch (error) {
+        console.error("Error fetching subscription status:", error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchSubscriptionStatus();
+  }, []);
 
   // Handle logout
   const handleLogout = async () => {
@@ -50,34 +74,24 @@ const SettingsScreen = () => {
           showChevron: true,
         },
         {
-          icon: "key",
-          label: "Privacy",
-          onPress: () => navigation.navigate("Privacy"),
-          showChevron: true,
-        },
-        {
-          icon: "shield-checkmark",
-          label: "Security",
-          onPress: () => navigation.navigate("Security"),
-          showChevron: true,
-        },
-        {
           icon: "phone-portrait",
           label: "Linked Devices",
           onPress: () => navigation.navigate("Devices"),
           showChevron: true,
+        },
+        {
+          icon: "star",
+          label: "Subscription",
+          onPress: () => navigation.navigate("Subscription"),
+          showChevron: true,
+          badge: hasActiveSubscription ? "Premium" : "Free",
+          badgeColor: hasActiveSubscription ? currentTheme.primary : "#FF9500",
         },
       ],
     },
     {
       section: "App",
       items: [
-        {
-          icon: "chatbubbles",
-          label: "Chats",
-          onPress: () => navigation.navigate("ChatSettings"),
-          showChevron: true,
-        },
         {
           icon: "notifications",
           label: "Notifications",
@@ -88,12 +102,6 @@ const SettingsScreen = () => {
           icon: "color-palette",
           label: "Appearance",
           onPress: () => navigation.navigate("Appearance"),
-          showChevron: true,
-        },
-        {
-          icon: "lock-closed",
-          label: "Encryption",
-          onPress: () => navigation.navigate("Encryption"),
           showChevron: true,
         },
       ],
@@ -140,7 +148,14 @@ const SettingsScreen = () => {
                 <Text style={[styles.settingLabel, { color: currentTheme.text }]}>{item.label}</Text>
               </View>
 
-              {item.showChevron && <Ionicons name="chevron-forward" size={20} color={currentTheme.placeholder} />}
+              <View style={styles.settingRight}>
+                {item.badge && (
+                  <View style={[styles.badge, { backgroundColor: item.badgeColor }]}>
+                    <Text style={styles.badgeText}>{item.badge}</Text>
+                  </View>
+                )}
+                {item.showChevron && <Ionicons name="chevron-forward" size={20} color={currentTheme.placeholder} />}
+              </View>
             </TouchableOpacity>
           ))}
         </View>
@@ -184,6 +199,10 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
   },
+  settingRight: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
   iconContainer: {
     width: 36,
     height: 36,
@@ -194,6 +213,17 @@ const styles = StyleSheet.create({
   },
   settingLabel: {
     fontSize: 16,
+  },
+  badge: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 10,
+    marginRight: 8,
+  },
+  badgeText: {
+    color: "#FFFFFF",
+    fontSize: 12,
+    fontWeight: "bold",
   },
   logoutButton: {
     marginHorizontal: 16,

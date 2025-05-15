@@ -19,7 +19,11 @@ export const getConversations = async (token) => {
     })
     return response.data
   } catch (error) {
-    throw error
+    console.error("Error getting conversations:", error.response?.data || error.message)
+    return {
+      success: false,
+      error: error.response?.data?.message || "Failed to get conversations"
+    }
   }
 }
 
@@ -37,21 +41,11 @@ export const getOrCreateConversation = async (recipientId, token) => {
     )
     return response.data
   } catch (error) {
-    throw error
-  }
-}
-
-// Get conversation details
-export const getConversationDetails = async (conversationId, token) => {
-  try {
-    const response = await api.get(API_ENDPOINTS.GET_CONVERSATIONS.replace(":conversationId", conversationId), {
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-    })
-    return response.data
-  } catch (error) {
-    throw error
+    console.error("Error creating conversation:", error.response?.data || error.message)
+    return {
+      success: false,
+      error: error.response?.data?.message || "Failed to create conversation"
+    }
   }
 }
 
@@ -66,7 +60,11 @@ export const createGroupConversation = async (formData, token) => {
     })
     return response.data
   } catch (error) {
-    throw error
+    console.error("Error creating group:", error.response?.data || error.message)
+    return {
+      success: false,
+      error: error.response?.data?.message || "Failed to create group"
+    }
   }
 }
 
@@ -80,7 +78,11 @@ export const updateGroupInfo = async (conversationId, updates, token) => {
     })
     return response.data
   } catch (error) {
-    throw error
+    console.error("Error updating group:", error.response?.data || error.message)
+    return {
+      success: false,
+      error: error.response?.data?.message || "Failed to update group"
+    }
   }
 }
 
@@ -99,7 +101,11 @@ export const updateGroupImage = async (conversationId, formData, token) => {
     )
     return response.data
   } catch (error) {
-    throw error
+    console.error("Error updating group image:", error.response?.data || error.message)
+    return {
+      success: false,
+      error: error.response?.data?.message || "Failed to update group image"
+    }
   }
 }
 
@@ -108,7 +114,7 @@ export const addParticipants = async (conversationId, participantIds, token) => 
   try {
     const response = await api.post(
       API_ENDPOINTS.ADD_PARTICIPANTS.replace(":conversationId", conversationId),
-      { participantIds },
+      { participants: participantIds },
       {
         headers: {
           Authorization: `Bearer ${token}`,
@@ -117,17 +123,21 @@ export const addParticipants = async (conversationId, participantIds, token) => 
     )
     return response.data
   } catch (error) {
-    throw error
+    console.error("Error adding participants:", error.response?.data || error.message)
+    return {
+      success: false,
+      error: error.response?.data?.message || "Failed to add participants"
+    }
   }
 }
 
 // Remove participant from group
-export const removeParticipant = async (conversationId, participantData, token) => {
+export const removeParticipant = async (conversationId, participantId, token) => {
   try {
     const response = await api.delete(
       API_ENDPOINTS.REMOVE_PARTICIPANT.replace(":conversationId", conversationId).replace(
         ":participantId",
-        participantData.participantId,
+        participantId,
       ),
       {
         headers: {
@@ -137,7 +147,11 @@ export const removeParticipant = async (conversationId, participantData, token) 
     )
     return response.data
   } catch (error) {
-    throw error
+    console.error("Error removing participant:", error.response?.data || error.message)
+    return {
+      success: false,
+      error: error.response?.data?.message || "Failed to remove participant"
+    }
   }
 }
 
@@ -151,52 +165,20 @@ export const leaveGroup = async (conversationId, token) => {
     })
     return response.data
   } catch (error) {
-    throw error
+    console.error("Error leaving group:", error.response?.data || error.message)
+    return {
+      success: false,
+      error: error.response?.data?.message || "Failed to leave group"
+    }
   }
 }
 
 // Make user an admin
-export const makeAdmin = async (conversationId, participantData, token) => {
-  try {
-    const response = await api.post(
-      API_ENDPOINTS.CHANGE_GROUP_ADMIN.replace(":conversationId", conversationId),
-      participantData,
-      {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      },
-    )
-    return response.data
-  } catch (error) {
-    throw error
-  }
-}
-
-// Remove admin status
-export const removeAdmin = async (conversationId, participantData, token) => {
-  try {
-    const response = await api.post(
-      API_ENDPOINTS.CHANGE_GROUP_ADMIN.replace(":conversationId", conversationId),
-      participantData,
-      {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      },
-    )
-    return response.data
-  } catch (error) {
-    throw error
-  }
-}
-
-// Toggle mute group
-export const toggleMuteGroup = async (conversationId, muteData, token) => {
+export const makeAdmin = async (conversationId, newAdminId, token) => {
   try {
     const response = await api.put(
-      API_ENDPOINTS.TOGGLE_MUTE_GROUP.replace(":conversationId", conversationId),
-      muteData,
+      API_ENDPOINTS.CHANGE_GROUP_ADMIN.replace(":conversationId", conversationId),
+      { newAdminId },
       {
         headers: {
           Authorization: `Bearer ${token}`,
@@ -205,6 +187,10 @@ export const toggleMuteGroup = async (conversationId, muteData, token) => {
     )
     return response.data
   } catch (error) {
-    throw error
+    console.error("Error making admin:", error.response?.data || error.message)
+    return {
+      success: false,
+      error: error.response?.data?.message || "Failed to make admin"
+    }
   }
 }

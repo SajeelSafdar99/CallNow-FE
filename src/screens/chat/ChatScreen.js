@@ -45,7 +45,7 @@ import {
 import { check, request, PERMISSIONS, RESULTS, openSettings } from "react-native-permissions"
 import Share from "react-native-share"
 import RNFS from "react-native-fs"
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import AsyncStorage from "@react-native-async-storage/async-storage"
 
 const ChatScreen = () => {
   const navigation = useNavigation()
@@ -85,8 +85,8 @@ const ChatScreen = () => {
   const [selectedMessages, setSelectedMessages] = useState([])
   const [isSelectionMode, setIsSelectionMode] = useState(false)
 
-  const [wallpaper, setWallpaper] = useState(null);
-  const [wallpaperId, setWallpaperId] = useState('default');
+  const [wallpaper, setWallpaper] = useState(null)
+  const [wallpaperId, setWallpaperId] = useState("default")
 
   const flatListRef = useRef(null)
   const typingTimeoutRef = useRef(null)
@@ -343,60 +343,133 @@ const ChatScreen = () => {
     }
   }
 
+  // Find the handleSendMedia function and replace it with this updated version that supports media groups
+
   // Send a media message
-  const handleSendMedia = async (mediaFile, contentType, content = "") => {
+  const handleSendMedia = async (mediaFiles, contentType, content = "") => {
     try {
-      // Optimistically add message to UI
-      const messageData = {
-        conversationId: conversation._id,
-        content: content || `${contentType.charAt(0).toUpperCase() + contentType.slice(1)}`,
-        contentType,
-        sender: {
-          _id: authState.user.id,
-          name: authState.user.name,
-        },
-        createdAt: new Date().toISOString(),
-        _id: `temp-${Date.now()}`,
-        isOptimistic: true,
-        mediaUrl: mediaFile.uri, // Local URI for preview
-        isUploading: true,
-      }
+      // Check if we're sending multiple media files
+      const isMediaGroup = Array.isArray(mediaFiles) && mediaFiles.length > 1
 
-      if (replyTo) {
-        messageData.replyTo = replyTo
-      }
+      if (isMediaGroup) {
+        // Create a media group message
+        const messageData = {
+          conversationId: conversation._id,
+          content: content || `${contentType.charAt(0).toUpperCase() + contentType.slice(1)} Group`,
+          contentType: contentType,
+          sender: {
+            _id: authState.user.id,
+            name: authState.user.name,
+          },
+          createdAt: new Date().toISOString(),
+          _id: `temp-${Date.now()}`,
+          isOptimistic: true,
+          mediaGroup: true,
+          mediaItems: mediaFiles.map((file, index) => ({
+            _id: `temp-item-${Date.now()}-${index}`,
+            mediaUrl: file.uri,
+            contentType: file.type.startsWith("image/") ? "image" : "video",
+            mediaName: file.fileName || `${file.type.startsWith("image/") ? "Image" : "Video"} ${index + 1}`,
+          })),
+          isUploading: true,
+        }
 
-      // Add to messages
-      setMessages((prevMessages) => [messageData, ...prevMessages])
+        if (replyTo) {
+          messageData.replyTo = replyTo
+        }
 
-      // Clear reply
-      setReplyTo(null)
+        // Add to messages
+        setMessages((prevMessages) => [messageData, ...prevMessages])
 
-      // Send to server
-      const response = await MessagesAPI.sendMediaMessage(
-        conversation._id,
-        content || `${contentType.charAt(0).toUpperCase() + contentType.slice(1)}`,
-        mediaFile,
-        contentType,
-        replyTo?._id,
-        authState.token,
-      )
+        // Clear reply
+        setReplyTo(null)
 
-      if (response.success) {
-        // Replace optimistic message with actual message
-        setMessages((prevMessages) =>
-          prevMessages.map((msg) =>
-            msg._id === messageData._id ? { ...response.message, isOptimistic: false, isUploading: false } : msg,
-          ),
+        // Send to server
+        const response = await MessagesAPI.sendMediaGroupMessage(
+          conversation._id,
+          content || `${contentType.charAt(0).toUpperCase() + contentType.slice(1)} Group`,
+          mediaFiles,
+          contentType,
+          replyTo?._id,
+          authState.token,
         )
 
-        // Send via socket
-        sendMessage(response.message)
+        if (response.success) {
+          // Replace optimistic message with actual message
+          setMessages((prevMessages) =>
+            prevMessages.map((msg) =>
+              msg._id === messageData._id ? { ...response.message, isOptimistic: false, isUploading: false } : msg,
+            ),
+          )
+
+          // Send via socket
+          sendMessage(response.message)
+        } else {
+          // Handle error
+          setMessages((prevMessages) =>
+            prevMessages.map((msg) =>
+              msg._id === messageData._id ? { ...msg, failed: true, isUploading: false } : msg,
+            ),
+          )
+        }
       } else {
-        // Handle error
-        setMessages((prevMessages) =>
-          prevMessages.map((msg) => (msg._id === messageData._id ? { ...msg, failed: true, isUploading: false } : msg)),
+        // Single media file - use the original logic
+        const mediaFile = Array.isArray(mediaFiles) ? mediaFiles[0] : mediaFiles
+
+        // Optimistically add message to UI
+        const messageData = {
+          conversationId: conversation._id,
+          content: content || `${contentType.charAt(0).toUpperCase() + contentType.slice(1)}`,
+          contentType,
+          sender: {
+            _id: authState.user.id,
+            name: authState.user.name,
+          },
+          createdAt: new Date().toISOString(),
+          _id: `temp-${Date.now()}`,
+          isOptimistic: true,
+          mediaUrl: mediaFile.uri, // Local URI for preview
+          isUploading: true,
+        }
+
+        if (replyTo) {
+          messageData.replyTo = replyTo
+        }
+
+        // Add to messages
+        setMessages((prevMessages) => [messageData, ...prevMessages])
+
+        // Clear reply
+        setReplyTo(null)
+
+        // Send to server
+        const response = await MessagesAPI.sendMediaMessage(
+          conversation._id,
+          content || `${contentType.charAt(0).toUpperCase() + contentType.slice(1)}`,
+          mediaFile,
+          contentType,
+          replyTo?._id,
+          authState.token,
         )
+
+        if (response.success) {
+          // Replace optimistic message with actual message
+          setMessages((prevMessages) =>
+            prevMessages.map((msg) =>
+              msg._id === messageData._id ? { ...response.message, isOptimistic: false, isUploading: false } : msg,
+            ),
+          )
+
+          // Send via socket
+          sendMessage(response.message)
+        } else {
+          // Handle error
+          setMessages((prevMessages) =>
+            prevMessages.map((msg) =>
+              msg._id === messageData._id ? { ...msg, failed: true, isUploading: false } : msg,
+            ),
+          )
+        }
       }
     } catch (error) {
       console.error("Error sending media:", error)
@@ -602,6 +675,8 @@ const ChatScreen = () => {
     }
   }
 
+  // Update the handlePickImage function to pass all selected media items to handleSendMedia
+
   // Pick and send an image - UPDATED to use standard React Native
   const handlePickImage = async () => {
     setIsAttachmentModalVisible(false)
@@ -615,9 +690,18 @@ const ChatScreen = () => {
       // Use the updated function to pick multiple media items
       const mediaItems = await pickMultipleMedia()
       if (mediaItems && mediaItems.length > 0) {
-        // Send each media item as a separate message
-        for (const item of mediaItems) {
-          // Determine content type based on the media type
+        // Send all media items as a group if there are multiple items
+        if (mediaItems.length > 1) {
+          // Determine content type based on majority of items
+          const imageCount = mediaItems.filter((item) => item.type.startsWith("image/")).length
+          const videoCount = mediaItems.length - imageCount
+          const contentType = imageCount >= videoCount ? "image" : "video"
+
+          // Send as a group
+          await handleSendMedia(mediaItems, contentType)
+        } else {
+          // Send as a single item
+          const item = mediaItems[0]
           const contentType = item.type.startsWith("image/") ? "image" : "video"
           await handleSendMedia(item, contentType)
         }
@@ -1156,7 +1240,8 @@ const ChatScreen = () => {
                   userImage: conversationDetails.image,
                 })
               } else {
-                Alert.alert("Group Info", "Group info screen will be implemented soon.")
+                // Replace this Alert with navigation to GroupDetailsScreen
+                navigation.navigate("GroupDetails", { conversation: conversation });
               }
             }}
           >
@@ -1222,49 +1307,49 @@ const ChatScreen = () => {
   const loadWallpaper = async () => {
     try {
       // Get the selected wallpaper ID
-      const savedWallpaperId = await AsyncStorage.getItem('selectedWallpaper');
+      const savedWallpaperId = await AsyncStorage.getItem("selectedWallpaper")
 
       if (savedWallpaperId) {
-        setWallpaperId(savedWallpaperId);
+        setWallpaperId(savedWallpaperId)
 
         // If it's a custom wallpaper, load the URI
-        if (savedWallpaperId === 'custom') {
-          const customWallpaperUri = await AsyncStorage.getItem('customWallpaper');
+        if (savedWallpaperId === "custom") {
+          const customWallpaperUri = await AsyncStorage.getItem("customWallpaper")
           if (customWallpaperUri) {
-            setWallpaper({ uri: customWallpaperUri });
+            setWallpaper({ uri: customWallpaperUri })
           }
         } else {
           // Load the default wallpaper based on ID
           switch (savedWallpaperId) {
-            case 'default':
-              setWallpaper(require('../../assets/images/wallpapers/default.jpg'));
-              break;
-            case 'dark':
-              setWallpaper(require('../../assets/images/wallpapers/dark.jpg'));
-              break;
-            case 'light':
-              setWallpaper(require('../../assets/images/wallpapers/light.jpg'));
-              break;
-            case 'pattern1':
-              setWallpaper(require('../../assets/images/wallpapers/pattern1.jpg'));
-              break;
-            case 'pattern2':
-              setWallpaper(require('../../assets/images/wallpapers/pattern2.jpg'));
-              break;
+            case "default":
+              setWallpaper(require("../../assets/images/wallpapers/default.jpg"))
+              break
+            case "dark":
+              setWallpaper(require("../../assets/images/wallpapers/dark.jpg"))
+              break
+            case "light":
+              setWallpaper(require("../../assets/images/wallpapers/light.jpg"))
+              break
+            case "pattern1":
+              setWallpaper(require("../../assets/images/wallpapers/pattern1.jpg"))
+              break
+            case "pattern2":
+              setWallpaper(require("../../assets/images/wallpapers/pattern2.jpg"))
+              break
             default:
-              setWallpaper(require('../../assets/images/wallpapers/default.jpg'));
+              setWallpaper(require("../../assets/images/wallpapers/default.jpg"))
           }
         }
       } else {
         // Default wallpaper if nothing is saved
-        setWallpaper(require('../../assets/images/wallpapers/default.jpg'));
+        setWallpaper(require("../../assets/images/wallpapers/default.jpg"))
       }
     } catch (error) {
-      console.error('Error loading wallpaper:', error);
+      console.error("Error loading wallpaper:", error)
       // Fallback to default wallpaper
-      setWallpaper(require('../../assets/images/wallpapers/default.jpg'));
+      setWallpaper(require("../../assets/images/wallpapers/default.jpg"))
     }
-  };
+  }
 
   // Initial setup
   useEffect(() => {
@@ -1442,11 +1527,7 @@ const ChatScreen = () => {
 
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: currentTheme.background }]}>
-      <ImageBackground
-        source={wallpaper}
-        style={styles.container}
-        resizeMode="cover"
-      >
+      <ImageBackground source={wallpaper} style={styles.container} resizeMode="cover">
         <KeyboardAvoidingView
           behavior={Platform.OS === "ios" ? "padding" : undefined}
           style={styles.container}
@@ -1494,7 +1575,10 @@ const ChatScreen = () => {
           {/* Reply Preview */}
           {replyTo && (
             <View
-              style={[styles.replyContainer, { backgroundColor: currentTheme.card, borderTopColor: currentTheme.border }]}
+              style={[
+                styles.replyContainer,
+                { backgroundColor: currentTheme.card, borderTopColor: currentTheme.border },
+              ]}
             >
               <View
                 style={[
@@ -1595,7 +1679,7 @@ const styles = StyleSheet.create({
   },
   container: {
     flex: 1,
-    width: '100%',
+    width: "100%",
   },
   keyboardAvoidingView: {
     flex: 1,

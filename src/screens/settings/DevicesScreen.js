@@ -11,14 +11,16 @@ import {
   ActivityIndicator,
   RefreshControl,
   Platform,
-  ToastAndroid
+  ToastAndroid,
+  Modal
 } from "react-native"
-import Ionicons from 'react-native-vector-icons/Ionicons';
+import Ionicons from 'react-native-vector-icons/Ionicons'
 import { useNavigation, useFocusEffect } from "@react-navigation/native"
 import { AuthContext } from "../../context/AuthContext"
 import { ThemeContext } from "../../context/ThemeContext"
 import { getTheme } from "../../utils/theme"
 import * as DevicesAPI from "../../api/devices"
+import * as SubscriptionAPI from "../../api/subscription"
 import { formatDate, formatDistanceToNow } from "../../utils/formatters"
 
 const DevicesScreen = () => {
@@ -34,6 +36,10 @@ const DevicesScreen = () => {
   const [currentDeviceId, setCurrentDeviceId] = useState(null)
   const [activeDeviceId, setActiveDeviceId] = useState(null)
   const [lastRefreshed, setLastRefreshed] = useState(null)
+  const [hasActiveSubscription, setHasActiveSubscription] = useState(false)
+  const [showSubscriptionModal, setShowSubscriptionModal] = useState(false)
+  const [pendingDeviceId, setPendingDeviceId] = useState(null)
+  const [pendingDeviceName, setPendingDeviceName] = useState(null)
 
   // Set up navigation options
   useEffect(() => {
@@ -56,6 +62,7 @@ const DevicesScreen = () => {
   useFocusEffect(
     useCallback(() => {
       fetchDevices();
+      fetchSubscriptionStatus();
       return () => {};
     }, [])
   );
@@ -68,12 +75,29 @@ const DevicesScreen = () => {
     }
 
     fetchDevices();
+    fetchSubscriptionStatus();
   }, []);
 
   // Handle refresh
   const handleRefresh = () => {
     setIsRefreshing(true);
     fetchDevices();
+    fetchSubscriptionStatus();
+  };
+
+  // Fetch subscription status
+  const fetchSubscriptionStatus = async () => {
+    try {
+      const response = await SubscriptionAPI.getSubscription(authState.token);
+
+      if (response.success) {
+        setHasActiveSubscription(response.hasActiveSubscription);
+      } else {
+        console.error("Failed to fetch subscription status:", response.message);
+      }
+    } catch (error) {
+      console.error("Error fetching subscription status:", error);
+    }
   };
 
   // Fetch devices from API
@@ -136,10 +160,20 @@ const DevicesScreen = () => {
       setIsRefreshing(false);
     }
   };
+
   // Handle setting a device as active
   const handleSetActiveDevice = async (deviceId, deviceName) => {
     if (deviceId === activeDeviceId) {
       // Already active
+      return;
+    }
+
+    // If there's already an active device and user doesn't have a subscription,
+    // show subscription modal
+    if (activeDeviceId && !hasActiveSubscription) {
+      setPendingDeviceId(deviceId);
+      setPendingDeviceName(deviceName);
+      setShowSubscriptionModal(true);
       return;
     }
 
@@ -173,15 +207,28 @@ const DevicesScreen = () => {
                 } else {
                   Alert.alert("Success", "Device set as active successfully");
                 }
+              } else if (response.requiresSubscription) {
+                // If the API indicates a subscription is required
+                setPendingDeviceId(deviceId);
+                setPendingDeviceName(deviceName);
+                setShowSubscriptionModal(true);
               } else {
                 Alert.alert("Error", response.message || "Failed to set device as active");
               }
             } catch (error) {
               console.error("Error setting active device:", error);
-              Alert.alert(
-                "Error",
-                "Failed to set device as active. Please try again."
-              );
+
+              // Check if error is related to subscription requirement
+              if (error.response?.data?.requiresSubscription) {
+                setPendingDeviceId(deviceId);
+                setPendingDeviceName(deviceName);
+                setShowSubscriptionModal(true);
+              } else {
+                Alert.alert(
+                  "Error",
+                  "Failed to set device as active. Please try again."
+                );
+              }
             } finally {
               setIsUpdating(false);
             }
@@ -189,6 +236,55 @@ const DevicesScreen = () => {
         }
       ]
     );
+  };
+
+  // Handle subscription modal actions
+  const handleSubscriptionAction = (action) => {
+    setShowSubscriptionModal(false);
+
+    switch (action) {
+      case 'subscribe':
+        navigation.navigate('Subscription');
+        break;
+      case 'trial':
+        startFreeTrial();
+        break;
+      case 'cancel':
+        setPendingDeviceId(null);
+        setPendingDeviceName(null);
+        break;
+    }
+  };
+
+  // Start free trial
+  const startFreeTrial = async () => {
+    try {
+      setIsUpdating(true);
+      const response = await SubscriptionAPI.startFreeTrial(authState.token);
+
+      if (response.success) {
+        setHasActiveSubscription(true);
+
+        // If there was a pending device to set as active
+        if (pendingDeviceId) {
+          await handleSetActiveDevice(pendingDeviceId, pendingDeviceName);
+        }
+
+        Alert.alert(
+          "Free Trial Started",
+          "Your 7-day free trial has started. You can now set any device as active."
+        );
+      } else {
+        Alert.alert("Error", response.message || "Failed to start free trial");
+      }
+    } catch (error) {
+      console.error("Error starting free trial:", error);
+      Alert.alert("Error", "Failed to start free trial. Please try again.");
+    } finally {
+      setIsUpdating(false);
+      setPendingDeviceId(null);
+      setPendingDeviceName(null);
+    }
   };
 
   // Handle device removal
@@ -410,6 +506,30 @@ const DevicesScreen = () => {
 
   return (
     <View style={[styles.container, { backgroundColor: currentTheme.background }]}>
+      {/* Subscription Status Banner */}
+      {hasActiveSubscription ? (
+        <View style={[styles.subscriptionBanner, { backgroundColor: currentTheme.primary }]}>
+          <Ionicons name="checkmark-circle" size={20} color="#FFFFFF" />
+          <Text style={styles.subscriptionBannerText}>
+            Premium Subscription Active
+          </Text>
+          <TouchableOpacity onPress={() => navigation.navigate('Subscription')}>
+            <Text style={styles.subscriptionBannerLink}>Manage</Text>
+          </TouchableOpacity>
+        </View>
+      ) : (
+        <TouchableOpacity
+          style={[styles.subscriptionBanner, { backgroundColor: "#FF9500" }]}
+          onPress={() => navigation.navigate('Subscription')}
+        >
+          <Ionicons name="star" size={20} color="#FFFFFF" />
+          <Text style={styles.subscriptionBannerText}>
+            Upgrade to Premium to use multiple active devices
+          </Text>
+          <Ionicons name="chevron-forward" size={20} color="#FFFFFF" />
+        </TouchableOpacity>
+      )}
+
       <View style={[styles.infoBox, { backgroundColor: currentTheme.primary + "20" }]}>
         <Text style={[styles.infoText, { color: currentTheme.primary }]}>
           These are devices that are currently logged in to your CallNow account. You can set an active device to receive calls and notifications, or log out from devices you're not using.
@@ -459,6 +579,75 @@ const DevicesScreen = () => {
         </TouchableOpacity>
       )}
 
+      {/* Subscription Modal */}
+      <Modal
+        visible={showSubscriptionModal}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setShowSubscriptionModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContainer, { backgroundColor: currentTheme.card }]}>
+            <View style={styles.modalHeader}>
+              <Ionicons name="star" size={40} color="#FF9500" />
+              <Text style={[styles.modalTitle, { color: currentTheme.text }]}>
+                Premium Subscription Required
+              </Text>
+            </View>
+
+            <Text style={[styles.modalText, { color: currentTheme.text }]}>
+              To set multiple devices as active, you need a premium subscription. With premium, you can:
+            </Text>
+
+            <View style={styles.featureList}>
+              <View style={styles.featureItem}>
+                <Ionicons name="checkmark-circle" size={20} color={currentTheme.primary} />
+                <Text style={[styles.featureText, { color: currentTheme.text }]}>
+                  Use multiple active devices
+                </Text>
+              </View>
+              <View style={styles.featureItem}>
+                <Ionicons name="checkmark-circle" size={20} color={currentTheme.primary} />
+                <Text style={[styles.featureText, { color: currentTheme.text }]}>
+                  Receive calls on any device
+                </Text>
+              </View>
+              <View style={styles.featureItem}>
+                <Ionicons name="checkmark-circle" size={20} color={currentTheme.primary} />
+                <Text style={[styles.featureText, { color: currentTheme.text }]}>
+                  Sync messages across all devices
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={[styles.modalButton, { backgroundColor: currentTheme.primary }]}
+                onPress={() => handleSubscriptionAction('subscribe')}
+              >
+                <Text style={styles.modalButtonText}>Subscribe Now</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.modalButton, { backgroundColor: "#FF9500" }]}
+                onPress={() => handleSubscriptionAction('trial')}
+              >
+                <Text style={styles.modalButtonText}>Start 7-Day Free Trial</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.modalButton, styles.cancelButton, { borderColor: currentTheme.border }]}
+                onPress={() => handleSubscriptionAction('cancel')}
+              >
+                <Text style={[styles.cancelButtonText, { color: currentTheme.text }]}>
+                  Not Now
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
       {isUpdating && (
         <View style={styles.updatingOverlay}>
           <ActivityIndicator size="large" color={currentTheme.primary} />
@@ -481,6 +670,24 @@ const styles = StyleSheet.create({
   loadingText: {
     marginTop: 10,
     fontSize: 16,
+  },
+  subscriptionBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    padding: 10,
+    paddingHorizontal: 15,
+  },
+  subscriptionBannerText: {
+    color: "#FFFFFF",
+    flex: 1,
+    marginHorizontal: 10,
+    fontSize: 14,
+  },
+  subscriptionBannerLink: {
+    color: "#FFFFFF",
+    fontWeight: "bold",
+    textDecorationLine: "underline",
   },
   infoBox: {
     padding: 15,
@@ -614,6 +821,69 @@ const styles = StyleSheet.create({
     marginTop: 10,
     fontSize: 16,
     fontWeight: '500',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  modalContainer: {
+    width: '100%',
+    borderRadius: 10,
+    padding: 20,
+    alignItems: 'center',
+  },
+  modalHeader: {
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    marginTop: 10,
+    textAlign: 'center',
+  },
+  modalText: {
+    fontSize: 16,
+    textAlign: 'center',
+    marginBottom: 20,
+  },
+  featureList: {
+    width: '100%',
+    marginBottom: 20,
+  },
+  featureItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  featureText: {
+    fontSize: 16,
+    marginLeft: 10,
+  },
+  modalButtons: {
+    width: '100%',
+  },
+  modalButton: {
+    padding: 15,
+    borderRadius: 8,
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  modalButtonText: {
+    color: '#FFFFFF',
+    fontWeight: 'bold',
+    fontSize: 16,
+  },
+  cancelButton: {
+    backgroundColor: 'transparent',
+    borderWidth: 1,
+  },
+  cancelButtonText: {
+    fontWeight: 'bold',
+    fontSize: 16,
   },
 });
 

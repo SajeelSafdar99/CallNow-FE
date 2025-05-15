@@ -3,6 +3,7 @@
 import { createContext, useReducer, useEffect } from "react"
 import AsyncStorage from "@react-native-async-storage/async-storage"
 import * as AuthAPI from "../api/auth"
+import * as ProfileAPI from "../api/profile"
 import DeviceInfo from 'react-native-device-info';
 
 // Initial state
@@ -56,10 +57,29 @@ const authReducer = (state, action) => {
         isLoading: false,
         error: null,
       }
+    case "UPDATE_USER":
+      return {
+        ...state,
+        user: {
+          ...state.user,
+          ...action.payload.user
+        }
+      }
+    case "AUTH_ERROR":
+      return {
+        ...state,
+        error: action.payload,
+      }
+    case "CLEAR_ERROR":
+      return {
+        ...state,
+        error: null,
+      }
     default:
       return state
   }
 }
+
 export const AuthProvider = ({ children }) => {
   const [state, dispatch] = useReducer(authReducer, initialState)
 
@@ -107,6 +127,7 @@ export const AuthProvider = ({ children }) => {
               token: response.token,
               user: response.user,
               deviceId,
+              deviceName,
             },
           })
 
@@ -155,7 +176,111 @@ export const AuthProvider = ({ children }) => {
         return { success: false, message: errorMessage }
       }
     },
+
+    // Add logout function
+    logout: async () => {
+      try {
+        // Call logout API if you have one
+        if (state.token) {
+          await AuthAPI.logout(state.token)
+        }
+
+        // Clear storage
+        await AsyncStorage.removeItem("token")
+        await AsyncStorage.removeItem("user")
+
+        // Update state
+        dispatch({ type: "LOGOUT" })
+        return { success: true }
+      } catch (error) {
+        console.error("Logout error:", error)
+        // Still clear local storage and state even if API call fails
+        await AsyncStorage.removeItem("token")
+        await AsyncStorage.removeItem("user")
+        dispatch({ type: "LOGOUT" })
+        return { success: true }
+      }
+    },
+
+    // Add updateProfile function
+    updateProfile: async (profileData) => {
+      try {
+        if (!state.token) {
+          return { success: false, message: "Not authenticated" }
+        }
+
+        const response = await ProfileAPI.updateProfile(profileData, state.token)
+
+        if (response.success) {
+          // Update local storage
+          const updatedUser = {
+            ...state.user,
+            ...profileData
+          }
+          await AsyncStorage.setItem("user", JSON.stringify(updatedUser))
+
+          // Update state
+          dispatch({
+            type: "UPDATE_USER",
+            payload: { user: profileData }
+          })
+
+          return { success: true, message: response.message }
+        } else {
+          return { success: false, message: response.error }
+        }
+      } catch (error) {
+        console.error("Update profile error:", error)
+        return {
+          success: false,
+          message: error.response?.data?.message || "Failed to update profile"
+        }
+      }
+    },
+
+    // Add updateProfilePicture function
+    updateProfilePicture: async (imageData) => {
+      try {
+        if (!state.token) {
+          return { success: false, message: "Not authenticated" }
+        }
+
+        const response = await ProfileAPI.updateProfilePicture(imageData, state.token)
+
+        if (response.success) {
+          // Update local storage with new profile picture
+          const updatedUser = {
+            ...state.user,
+            profilePicture: response.user.profilePicture
+          }
+          await AsyncStorage.setItem("user", JSON.stringify(updatedUser))
+
+          // Update state
+          dispatch({
+            type: "UPDATE_USER",
+            payload: {
+              user: { profilePicture: response.user.profilePicture }
+            }
+          })
+
+          return { success: true, message: response.message }
+        } else {
+          return { success: false, message: response.error }
+        }
+      } catch (error) {
+        console.error("Update profile picture error:", error)
+        return {
+          success: false,
+          message: error.response?.data?.message || "Failed to update profile picture"
+        }
+      }
+    },
+
+    // Add clearError function
+    clearError: () => {
+      dispatch({ type: "CLEAR_ERROR" })
+    }
   }
 
-  return <AuthContext.Provider value={{ state, ...authActions }}>{children}</AuthContext.Provider>
+  return <AuthContext.Provider value={{ state, dispatch, ...authActions }}>{children}</AuthContext.Provider>
 }

@@ -1,16 +1,19 @@
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs"
 import Ionicons from "react-native-vector-icons/Ionicons"
-
 // Screens
-import ChatsListScreen from "../screens/chat/ChatsListScreen"
-import CallHistoryScreen from "../screens/calls/CallHistoryScreen"
 import SettingsNavigator from './SettingsNavigator';
-// import ProfileScreen from "../screens/profile/ProfileScreen"
 import ChatNavigator from "../navigation/ChatNavigator"
-import {lightTheme as currentTheme} from '../utils/theme';
+import {getTheme, lightTheme as currentTheme} from '../utils/theme';
+import {useContext} from 'react';
+import {ThemeContext} from '../context/ThemeContext';
+import CallsStack from './CallNavigator';
 const Tab = createBottomTabNavigator()
 
+
+
 const MainTabNavigator = () => {
+  const { theme } = useContext(ThemeContext);
+  const currentTheme = getTheme(theme);
   return (
     <Tab.Navigator
       screenOptions={{
@@ -45,9 +48,11 @@ const MainTabNavigator = () => {
       />
       <Tab.Screen
         name="Calls"
-        component={CallHistoryScreen}
+        component={CallsStack}
         options={{
-          tabBarIcon: ({ color, size }) => <Ionicons name="call" size={size} color={color} />,
+          tabBarIcon: ({ color, size,focused }) => (
+            <Ionicons name={focused ? 'call' : 'call-outline'} color={color} size={size} />
+          ),
         }}
       />
       <Tab.Screen
@@ -55,7 +60,7 @@ const MainTabNavigator = () => {
         component={SettingsNavigator}
         options={{
           headerShown: false, // Hide the header since SettingsNavigator has its own header
-          tabBarIcon: ({ color, size }) => <Ionicons name="settings" size={size} color={color} />,
+          tabBarIcon: ({ color, size,focused }) => <Ionicons name={focused ? 'settings' : 'settings-outline'} size={size} color={color} />,
         }}
       />
     </Tab.Navigator>

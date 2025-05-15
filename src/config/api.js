@@ -1,5 +1,5 @@
-const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || "http://192.168.10.19:5001/api"
-const API_BASE_URL_FOR_MEDIA = process.env.REACT_APP_API_BASE_URL_FOR_MEDIA || "http://192.168.10.19:5001"
+const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || "http://192.168.10.6:5001/api"
+const API_BASE_URL_FOR_MEDIA = process.env.REACT_APP_API_BASE_URL_FOR_MEDIA || "http://192.168.10.6:5001"
 const API_ENDPOINTS = {
   // Auth endpoints
   REGISTER: "/auth/register",
@@ -26,27 +26,31 @@ const API_ENDPOINTS = {
   GET_CONVERSATIONS: "/conversations",
   CREATE_CONVERSATION: "/conversations",
   CREATE_GROUP: "/conversations/group",
-  UPDATE_GROUP: "/conversations/group",
-  UPDATE_GROUP_IMAGE: "/conversations/group/image",
-  ADD_PARTICIPANTS: "/conversations/group/participants",
-  REMOVE_PARTICIPANT: "/conversations/group/participants",
-  LEAVE_GROUP: "/conversations/group/leave",
-  CHANGE_GROUP_ADMIN: "/conversations/group/admin",
+  UPDATE_GROUP: "/conversations/group/:conversationId",
+  UPDATE_GROUP_IMAGE: "/conversations/group/:conversationId/image",
+  ADD_PARTICIPANTS: "/conversations/group/:conversationId/participants",
+  REMOVE_PARTICIPANT: "/conversations/group/:conversationId/participants/:participantId",
+  LEAVE_GROUP: "/conversations/group/:conversationId/leave",
+  CHANGE_GROUP_ADMIN: "/conversations/group/:conversationId/admin",
+  TOGGLE_MUTE_GROUP: "/conversations/group/:conversationId/mute",
+
+  // Contact endpoints
+  GET_CONTACTS: "/contacts",
+  ADD_CONTACT: "/contacts",
+  UPDATE_CONTACT: "/contacts/:contactId",
+  DELETE_CONTACT: "/contacts/:contactId",
+  CHECK_USER_EXISTS: "/contacts/check",
+  IMPORT_CONTACTS: "/contacts/import",
+  GET_CONTACT_GROUPS: "/contacts/groups",
+
+  // User endpoints
+  GET_USER_PROFILE: "profile/user/:userId",
 
   // Message endpoints
   SEND_MESSAGE: "/messages",
   GET_MESSAGES: "/messages",
   DELETE_MESSAGE: "/messages",
   MARK_AS_DELIVERED: "/messages/deliver",
-
-  // Contact endpoints
-  GET_CONTACTS: "/contact",
-  ADD_CONTACT: "/contact",
-  UPDATE_CONTACT: "/contact",
-  DELETE_CONTACT: "/contact",
-  BLOCK_CONTACT: "/contact/block",
-  UNBLOCK_CONTACT: "/contact/unblock",
-  GET_BLOCKED_CONTACTS: "/contact/blocked",
 
   // Call endpoints
   INITIATE_CALL: "/calls",
@@ -83,6 +87,14 @@ const API_ENDPOINTS = {
   UPDATE_ICE_SERVER: "/ice-server",
   DELETE_ICE_SERVER: "/ice-server",
   GET_REGION_ICE_SERVERS: "/ice-server/region",
+
+  // Subscription endpoints
+  GET_SUBSCRIPTION: "/subscriptions",
+  CREATE_PAYMENT_INTENT: "/subscriptions/payment-intent",
+  SUBSCRIBE: "/subscriptions/subscribe",
+  CANCEL_SUBSCRIPTION: "/subscriptions/cancel",
+  RENEW_SUBSCRIPTION: "/subscriptions/renew",
+  START_FREE_TRIAL: "/subscriptions/trial",
 }
 
 export { API_BASE_URL, API_ENDPOINTS, API_BASE_URL_FOR_MEDIA }

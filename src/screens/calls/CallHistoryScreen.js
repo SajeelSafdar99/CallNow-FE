@@ -1,283 +1,287 @@
-"use client"
-
-import { useState, useEffect, useContext } from "react"
+import React, { useState, useEffect, useContext, useCallback } from "react"
 import {
   View,
   Text,
   StyleSheet,
+  FlatList,
   TouchableOpacity,
   ActivityIndicator,
   Alert,
   RefreshControl,
-  SectionList,
 } from "react-native"
+import { useNavigation, useFocusEffect } from "@react-navigation/native"
 import Ionicons from "react-native-vector-icons/Ionicons"
-import { useNavigation } from "@react-navigation/native"
 import { AuthContext } from "../../context/AuthContext"
-import * as CallsAPI from "../../api/calls"
-import * as GroupCallsAPI from "../../api/group-calls"
-import { formatDate, formatTime, formatCallDuration } from "../../utils/formatters"
+import { ThemeContext } from "../../context/ThemeContext"
+import { getTheme } from "../../utils/theme"
+import * as CallAPI from "../../api/call"
+import * as CallLogAPI from "../../api/call-log"
 
 const CallHistoryScreen = () => {
   const navigation = useNavigation()
   const { state: authState } = useContext(AuthContext)
+  const { theme } = useContext(ThemeContext)
+  const currentTheme = getTheme(theme)
 
   const [callHistory, setCallHistory] = useState([])
   const [isLoading, setIsLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
-  const [sections, setSections] = useState([])
-
-  // Fetch call history on mount
-  useEffect(() => {
-    fetchCallHistory()
-  }, [])
-
-  // Process call history into sections
-  useEffect(() => {
-    if (callHistory.length > 0) {
-      const groupedCalls = groupCallsByDate(callHistory)
-      setSections(groupedCalls)
-    }
-  }, [callHistory])
+  const [page, setPage] = useState(1)
+  const [hasMore, setHasMore] = useState(true)
 
   // Fetch call history
-  const fetchCallHistory = async () => {
+  const fetchCallHistory = async (pageNum = 1, shouldRefresh = false) => {
     try {
-      setIsLoading(true)
-
-      // Fetch one-to-one call history
-      const callResponse = await CallsAPI.getCallHistory({}, authState.token)
-
-      // Fetch group call history
-      const groupCallResponse = await GroupCallsAPI.getGroupCallHistory(authState.token)
-
-      // Combine and sort call history
-      let combinedHistory = []
-
-      if (callResponse.success) {
-        combinedHistory = [
-          ...combinedHistory,
-          ...callResponse.calls.map((call) => ({
-            ...call,
-            isGroupCall: false,
-          })),
-        ]
+      if (shouldRefresh) {
+        setIsLoading(true)
       }
 
-      if (groupCallResponse.success) {
-        combinedHistory = [
-          ...combinedHistory,
-          ...groupCallResponse.groupCalls.map((call) => ({
-            ...call,
-            isGroupCall: true,
-          })),
-        ]
+      // Using the unified call history endpoint from call-log API
+      // which includes both one-to-one and group calls
+      const response = await CallLogAPI.getUnifiedCallHistory(
+        authState.token,
+        pageNum
+      )
+
+      if (response.success) {
+        if (shouldRefresh || pageNum === 1) {
+          setCallHistory(response.calls)
+        } else {
+          setCallHistory((prev) => [...prev, ...response.calls])
+        }
+
+        setHasMore(
+          response.pagination.page < response.pagination.totalPages
+        )
+        setPage(pageNum)
+      } else {
+        Alert.alert("Error", response.message || "Failed to fetch call history")
       }
-
-      // Sort by timestamp (newest first)
-      combinedHistory.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
-
-      setCallHistory(combinedHistory)
-      setIsLoading(false)
-      setRefreshing(false)
     } catch (error) {
       console.error("Error fetching call history:", error)
+      Alert.alert("Error", "An unexpected error occurred")
+    } finally {
       setIsLoading(false)
       setRefreshing(false)
-      Alert.alert("Error", "Failed to load call history. Please try again.")
     }
   }
 
-  // Group calls by date
-  const groupCallsByDate = (calls) => {
-    const grouped = {}
+  // Initial fetch
+  useEffect(() => {
+    fetchCallHistory(1, true)
+  }, [])
 
-    calls.forEach((call) => {
-      const date = new Date(call.timestamp)
-      const dateString = formatDate(date)
-
-      if (!grouped[dateString]) {
-        grouped[dateString] = []
-      }
-
-      grouped[dateString].push(call)
-    })
-
-    // Convert to sections format
-    return Object.keys(grouped).map((date) => ({
-      title: date,
-      data: grouped[date],
-    }))
-  }
+  // Refresh when screen comes into focus
+  useFocusEffect(
+    useCallback(() => {
+      fetchCallHistory(1, true)
+      return () => {}
+    }, [])
+  )
 
   // Handle refresh
   const onRefresh = () => {
     setRefreshing(true)
-    fetchCallHistory()
+    fetchCallHistory(1, true)
   }
 
-  // Delete call from history
-  const deleteCall = async (call) => {
-    try {
-      if (call.isGroupCall) {
-        await GroupCallsAPI.deleteGroupCallFromHistory(call._id, authState.token)
-      } else {
-        await CallsAPI.deleteCall(call._id, authState.token)
-      }
-
-      // Update local state
-      setCallHistory((prev) => prev.filter((c) => c._id !== call._id))
-
-      Alert.alert("Success", "Call removed from history")
-    } catch (error) {
-      console.error("Error deleting call:", error)
-      Alert.alert("Error", "Failed to delete call. Please try again.")
+  // Load more calls
+  const loadMoreCalls = () => {
+    if (!isLoading && hasMore) {
+      fetchCallHistory(page + 1)
     }
   }
 
-  // Confirm delete call
-  const confirmDeleteCall = (call) => {
-    Alert.alert("Delete Call", "Are you sure you want to remove this call from your history?", [
-      { text: "Cancel", style: "cancel" },
-      { text: "Delete", style: "destructive", onPress: () => deleteCall(call) },
-    ])
+  // Format call duration
+  const formatDuration = (seconds) => {
+    if (!seconds) return "--:--"
+
+    const hrs = Math.floor(seconds / 3600)
+    const mins = Math.floor((seconds % 3600) / 60)
+    const secs = Math.floor(seconds % 60)
+
+    if (hrs > 0) {
+      return `${hrs}:${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`
+    }
+
+    return `${mins}:${secs.toString().padStart(2, "0")}`
   }
 
-  // Make a call
-  const makeCall = (contact, isVideoCall = false) => {
-    navigation.navigate("Call", {
-      contactUser: contact,
-      isVideoCall,
-    })
+  // Get call icon based on type and status
+  const getCallIcon = (call) => {
+    const isMissed = call.status === "missed" || call.status === "rejected"
+    const isOutgoing = call.participants.find(p => p.role === "self")?.role === "caller" ||
+      call.participants.find(p => p.role === "self")?.role === "initiator"
+
+    if (call.type === "group") {
+      return {
+        name: isMissed ? "call-missed" : isOutgoing ? "call-made" : "call-received",
+        color: isMissed ? "#FF3B30" : isOutgoing ? currentTheme.primary : "#4CD964",
+      }
+    }
+
+    if (call.callType === "video") {
+      return {
+        name: isMissed ? "videocam-off" : "videocam",
+        color: isMissed ? "#FF3B30" : currentTheme.primary,
+      }
+    }
+
+    return {
+      name: isMissed
+        ? "call-missed"
+        : isOutgoing
+          ? "call-made"
+          : "call-received",
+      color: isMissed ? "#FF3B30" : isOutgoing ? currentTheme.primary : "#4CD964",
+    }
   }
 
-  // Make a group call
-  const makeGroupCall = (conversation, isVideoCall = false) => {
-    navigation.navigate("GroupCall", {
-      conversation,
-      isVideoCall,
-    })
+  // Get other participant name for one-to-one calls
+  const getCallName = (call) => {
+    if (call.type === "group") {
+      return call.conversation?.groupName || "Group Call"
+    }
+
+    const otherParticipant = call.participants.find(p => p.role !== "self")
+    return otherParticipant?.user?.name || otherParticipant?.user?.phoneNumber || "Unknown"
+  }
+
+  // Navigate to call details
+  const navigateToCallDetails = (call) => {
+    navigation.navigate("CallDetails", { callId: call.id, callType: call.type })
+  }
+
+  // Initiate a new call
+  const initiateCall = (call, callType) => {
+    if (call.type === "group") {
+      // Handle group call initiation
+      Alert.alert("Group Call", "Group call functionality will be implemented soon")
+    } else {
+      // Get the other participant
+      const otherParticipant = call.participants.find(p => p.role !== "self")
+
+      if (otherParticipant?.user?._id) {
+        navigation.navigate("Call", {
+          receiverId: otherParticipant.user._id,
+          receiverName: otherParticipant.user.name || otherParticipant.user.phoneNumber,
+          receiverProfilePic: otherParticipant.user.profilePicture,
+          callType: callType || call.callType,
+        })
+      } else {
+        Alert.alert("Error", "Could not find call participant")
+      }
+    }
   }
 
   // Render call item
   const renderCallItem = ({ item }) => {
-    const isIncoming = item.direction === "incoming"
-    const isMissed = isIncoming && item.status === "missed"
-    const isGroupCall = item.isGroupCall
-
-    // Determine icon and color
-    let iconName = "call"
-    let iconColor = "#128C7E"
-
-    if (item.isVideoCall) {
-      iconName = "videocam"
-    }
-
-    if (isMissed) {
-      iconColor = "#FF3B30"
-    }
-
-    if (isGroupCall) {
-      iconName = item.isVideoCall ? "people" : "call"
-    }
+    const callIcon = getCallIcon(item)
+    const callName = getCallName(item)
+    const callTime = new Date(item.startTime).toLocaleTimeString([], {
+      hour: '2-digit',
+      minute: '2-digit'
+    })
+    const callDate = new Date(item.startTime).toLocaleDateString()
 
     return (
       <TouchableOpacity
-        style={styles.callItem}
-        onPress={() => {
-          if (isGroupCall) {
-            makeGroupCall(item.conversation, item.isVideoCall)
-          } else {
-            makeCall(isIncoming ? item.caller : item.recipient, item.isVideoCall)
-          }
-        }}
-        onLongPress={() => confirmDeleteCall(item)}
+        style={[styles.callItem, { borderBottomColor: currentTheme.border }]}
+        onPress={() => navigateToCallDetails(item)}
       >
         <View style={styles.callIconContainer}>
-          <Ionicons name={iconName} size={24} color={iconColor} />
+          <Ionicons name={callIcon.name} size={24} color={callIcon.color} />
         </View>
 
-        <View style={styles.callInfo}>
-          <Text style={styles.callName}>
-            {isGroupCall
-              ? item.conversation.groupName || "Group Call"
-              : isIncoming
-                ? item.caller.name
-                : item.recipient.name}
+        <View style={styles.callInfoContainer}>
+          <Text style={[styles.callName, { color: currentTheme.text }]}>
+            {callName}
           </Text>
 
-          <View style={styles.callDetails}>
+          <View style={styles.callDetailsRow}>
             <Ionicons
-              name={isIncoming ? "arrow-down" : "arrow-up"}
-              size={16}
-              color={isMissed ? "#FF3B30" : "#7F7F7F"}
-              style={styles.directionIcon}
+              name={item.type === "group" ? "people" : "person"}
+              size={14}
+              color={currentTheme.placeholder}
+              style={styles.smallIcon}
             />
-
-            <Text style={[styles.callStatus, isMissed && styles.missedCall]}>
-              {isMissed ? "Missed" : item.status}
-              {item.duration > 0 && ` • ${formatCallDuration(item.duration)}`}
+            <Text style={[styles.callDetails, { color: currentTheme.placeholder }]}>
+              {item.status === "missed" ? "Missed" :
+                item.status === "rejected" ? "Declined" :
+                  formatDuration(item.duration)}
+            </Text>
+            <Text style={[styles.callTime, { color: currentTheme.placeholder }]}>
+              {callTime} • {callDate}
             </Text>
           </View>
         </View>
 
         <View style={styles.callActions}>
-          <Text style={styles.callTime}>{formatTime(new Date(item.timestamp))}</Text>
+          <TouchableOpacity
+            style={styles.callActionButton}
+            onPress={() => initiateCall(item, "audio")}
+          >
+            <Ionicons name="call" size={22} color={currentTheme.primary} />
+          </TouchableOpacity>
 
           <TouchableOpacity
-            style={styles.callButton}
-            onPress={() => {
-              if (isGroupCall) {
-                makeGroupCall(item.conversation, item.isVideoCall)
-              } else {
-                makeCall(isIncoming ? item.caller : item.recipient, item.isVideoCall)
-              }
-            }}
+            style={styles.callActionButton}
+            onPress={() => initiateCall(item, "video")}
           >
-            <Ionicons name={item.isVideoCall ? "videocam" : "call"} size={22} color="#128C7E" />
+            <Ionicons name="videocam" size={22} color={currentTheme.primary} />
           </TouchableOpacity>
         </View>
       </TouchableOpacity>
     )
   }
 
-  // Render section header
-  const renderSectionHeader = ({ section }) => (
-    <View style={styles.sectionHeader}>
-      <Text style={styles.sectionHeaderText}>{section.title}</Text>
-    </View>
-  )
+  // Render empty state
+  const renderEmptyState = () => {
+    if (isLoading) return null
 
-  // Render empty component
-  const renderEmptyComponent = () => (
-    <View style={styles.emptyContainer}>
-      <Ionicons name="call-outline" size={60} color="#CCCCCC" />
-      <Text style={styles.emptyText}>No call history</Text>
-      <Text style={styles.emptySubText}>Your call history will appear here</Text>
-    </View>
-  )
-
-  // Render loading state
-  if (isLoading && !refreshing) {
     return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#128C7E" />
-        <Text style={styles.loadingText}>Loading call history...</Text>
+      <View style={styles.emptyStateContainer}>
+        <Ionicons name="call-outline" size={60} color={currentTheme.placeholder} />
+        <Text style={[styles.emptyStateText, { color: currentTheme.text }]}>
+          No call history
+        </Text>
+        <Text style={[styles.emptyStateSubtext, { color: currentTheme.placeholder }]}>
+          Your call history will appear here
+        </Text>
+      </View>
+    )
+  }
+
+  // Render footer (loading indicator)
+  const renderFooter = () => {
+    if (!isLoading || refreshing) return null
+
+    return (
+      <View style={styles.footerContainer}>
+        <ActivityIndicator size="small" color={currentTheme.primary} />
       </View>
     )
   }
 
   return (
-    <View style={styles.container}>
-      <SectionList
-        sections={sections}
-        keyExtractor={(item) => item._id}
-        yExtractor={(item) => item._id}
+    <View style={[styles.container, { backgroundColor: currentTheme.background }]}>
+      <FlatList
+        data={callHistory}
         renderItem={renderCallItem}
-        renderSectionHeader={renderSectionHeader}
-        ListEmptyComponent={renderEmptyComponent}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={["#128C7E"]} />}
-        contentContainerStyle={callHistory.length === 0 ? { flex: 1 } : null}
+        keyExtractor={(item) => `${item.type}-${item.id}`}
+        contentContainerStyle={callHistory.length === 0 && styles.emptyListContent}
+        ListEmptyComponent={renderEmptyState}
+        ListFooterComponent={renderFooter}
+        onEndReached={loadMoreCalls}
+        onEndReachedThreshold={0.5}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={[currentTheme.primary]}
+            tintColor={currentTheme.primary}
+          />
+        }
       />
     </View>
   )
@@ -286,100 +290,76 @@ const CallHistoryScreen = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#FFFFFF",
   },
-  loadingContainer: {
-    flex: 1,
+  emptyListContent: {
+    flexGrow: 1,
     justifyContent: "center",
     alignItems: "center",
-    backgroundColor: "#FFFFFF",
-  },
-  loadingText: {
-    marginTop: 10,
-    fontSize: 16,
-    color: "#7F7F7F",
-  },
-  sectionHeader: {
-    backgroundColor: "#F2F2F2",
-    padding: 10,
-    paddingHorizontal: 15,
-  },
-  sectionHeaderText: {
-    fontSize: 14,
-    fontWeight: "bold",
-    color: "#7F7F7F",
   },
   callItem: {
     flexDirection: "row",
     padding: 15,
-    borderBottomWidth: 1,
-    borderBottomColor: "#F2F2F2",
-    alignItems: "center",
+    borderBottomWidth: 0.5,
   },
   callIconContainer: {
     width: 40,
     height: 40,
-    borderRadius: 20,
-    backgroundColor: "#F2F2F2",
     justifyContent: "center",
     alignItems: "center",
-    marginRight: 15,
   },
-  callInfo: {
+  callInfoContainer: {
     flex: 1,
+    marginLeft: 10,
+    justifyContent: "center",
   },
   callName: {
     fontSize: 16,
     fontWeight: "500",
-    marginBottom: 3,
+    marginBottom: 4,
   },
-  callDetails: {
+  callDetailsRow: {
     flexDirection: "row",
     alignItems: "center",
   },
-  directionIcon: {
-    marginRight: 5,
+  smallIcon: {
+    marginRight: 4,
   },
-  callStatus: {
-    fontSize: 14,
-    color: "#7F7F7F",
-  },
-  missedCall: {
-    color: "#FF3B30",
-  },
-  callActions: {
-    alignItems: "flex-end",
+  callDetails: {
+    fontSize: 13,
+    marginRight: 8,
   },
   callTime: {
-    fontSize: 14,
-    color: "#7F7F7F",
-    marginBottom: 5,
+    fontSize: 13,
   },
-  callButton: {
+  callActions: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  callActionButton: {
     width: 36,
     height: 36,
-    borderRadius: 18,
-    backgroundColor: "#F2F2F2",
     justifyContent: "center",
     alignItems: "center",
+    marginLeft: 8,
   },
-  emptyContainer: {
-    flex: 1,
-    justifyContent: "center",
+  emptyStateContainer: {
     alignItems: "center",
+    justifyContent: "center",
     padding: 20,
   },
-  emptyText: {
+  emptyStateText: {
     fontSize: 18,
     fontWeight: "bold",
-    color: "#7F7F7F",
-    marginTop: 15,
+    marginTop: 20,
+    marginBottom: 8,
   },
-  emptySubText: {
+  emptyStateSubtext: {
     fontSize: 14,
-    color: "#7F7F7F",
-    marginTop: 5,
     textAlign: "center",
+  },
+  footerContainer: {
+    padding: 20,
+    alignItems: "center",
   },
 })
 

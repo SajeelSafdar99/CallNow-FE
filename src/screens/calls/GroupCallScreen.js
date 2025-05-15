@@ -21,7 +21,7 @@ import { RTCPeerConnection, RTCIceCandidate, RTCSessionDescription, mediaDevices
 import { AuthContext } from "../../context/AuthContext"
 import { SocketContext } from "../../context/SocketContext"
 import * as GroupCallsAPI from "../../api/group-calls"
-import * as CallsAPI from "../../api/calls"
+import * as CallsAPI from "../../api/call"
 import { API_BASE_URL } from "../../config/api"
 import { formatCallDuration } from "../../utils/formatters"
 

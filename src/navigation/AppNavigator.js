@@ -36,12 +36,14 @@ import MainTabNavigator from "./MainTabNavigator"
 // import HelpScreen from "../screens/settings/HelpScreen"
 // import AboutScreen from "../screens/settings/AboutScreen"
 // import DevicesScreen from '../screens/settings/DevicesScreen';
-
+import { ThemeContext } from '../context/ThemeContext';
+import { getTheme } from '../utils/theme';
 const Stack = createStackNavigator()
 
 const AppNavigator = () => {
   const { state } = useContext(AuthContext)
-
+  const { theme } = useContext(ThemeContext);
+  const currentTheme = getTheme(theme);
   // Show splash screen while checking authentication
   if (state.isLoading) {
     return <SplashScreen />
@@ -52,11 +54,11 @@ const AppNavigator = () => {
       <Stack.Navigator
         screenOptions={{
           headerStyle: {
-            backgroundColor: "#128C7E",
+            backgroundColor: currentTheme.primary,
           },
-          headerTintColor: "#FFFFFF",
+          headerTintColor: '#FFFFFF',
           headerTitleStyle: {
-            fontWeight: "bold",
+            fontWeight: 'bold',
           },
         }}
       >

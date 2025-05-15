@@ -5,6 +5,11 @@ import { ThemeContext } from '../context/ThemeContext';
 import { getTheme } from '../utils/theme';
 import ChatsListScreen from '../screens/chat/ChatsListScreen';
 import ChatScreen from '../screens/chat/ChatScreen';
+import ContactDetailScreen from '../screens/contacts/ContactDetailsScreen';
+import ContactsScreen from '../screens/contacts/ContactsScreen';
+import GroupDetailsScreen from '../screens/chat/GroupDetailsScreen';
+import UserDetailsScreen from '../screens/chat/UserDetailsScreen';
+
 const Stack = createStackNavigator();
 
 const ChatNavigator = () => {
@@ -36,29 +41,33 @@ const ChatNavigator = () => {
           headerBackTitle: 'Back'
         })}
       />
-
-      {/*<Stack.Screen*/}
-      {/*  name="Contacts"*/}
-      {/*  component={ContactsScreen}*/}
-      {/*  options={{ title: 'Contacts' }}*/}
-      {/*/>*/}
-      {/*<Stack.Screen*/}
-      {/*  name="UserProfile"*/}
-      {/*  component={UserProfileScreen}*/}
-      {/*  options={({ route }) => ({*/}
-      {/*    title: route.params?.userName || 'Profile',*/}
-      {/*    headerBackTitle: 'Back'*/}
-      {/*  })}*/}
-      {/*/>*/}
-      {/*<Stack.Screen*/}
-      {/*  name="Call"*/}
-      {/*  component={CallScreen}*/}
-      {/*  options={({ route }) => ({*/}
-      {/*    title: route.params?.isVideo ? 'Video Call' : 'Voice Call',*/}
-      {/*    headerBackTitle: 'End',*/}
-      {/*    headerLeft: null // Hide back button during calls*/}
-      {/*  })}*/}
-      {/*/>*/}
+      <Stack.Screen
+        name="GroupDetails"
+        component={GroupDetailsScreen}
+        options={{ title: 'Group Info' }}
+      />
+      <Stack.Screen
+        name="UserProfile"
+        component={UserDetailsScreen}
+        options={({ route }) => ({
+          title: route.params?.userName || 'Profile',
+          headerBackTitle: 'Back'
+        })}
+      />
+      <Stack.Screen
+        name="Contacts"
+        component={ContactsScreen}
+        options={{
+          title: "Contacts",
+        }}
+      />
+      <Stack.Screen
+        name="ContactDetail"
+        component={ContactDetailScreen}
+        options={{
+          title: "Contact Details",
+        }}
+      />
     </Stack.Navigator>
   );
 };

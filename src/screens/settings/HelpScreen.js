@@ -1,7 +1,13 @@
+import React, { useContext } from "react"
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Linking } from "react-native"
-import Ionicons from 'react-native-vector-icons/Ionicons';
+import Ionicons from 'react-native-vector-icons/Ionicons'
+import { ThemeContext } from "../../context/ThemeContext"
+import { getTheme } from "../../utils/theme"
 
 const HelpScreen = () => {
+  const { theme } = useContext(ThemeContext)
+  const currentTheme = getTheme(theme)
+
   // Open FAQ website
   const openFAQ = () => {
     Linking.openURL("#")
@@ -23,52 +29,64 @@ const HelpScreen = () => {
   }
 
   return (
-    <ScrollView style={styles.container}>
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Help</Text>
+    <ScrollView style={[styles.container, { backgroundColor: currentTheme.background }]}>
+      <View style={[styles.section, { backgroundColor: currentTheme.card }]}>
+        <Text style={[styles.sectionTitle, { color: currentTheme.primary }]}>Help</Text>
 
-        <TouchableOpacity style={styles.menuItem} onPress={openFAQ}>
+        <TouchableOpacity
+          style={[styles.menuItem, { borderBottomColor: currentTheme.border }]}
+          onPress={openFAQ}
+        >
           <View style={styles.menuItemContent}>
-            <Ionicons name="help-circle-outline" size={24} color="#666" style={styles.menuIcon} />
-            <Text style={styles.menuText}>FAQ</Text>
+            <Ionicons name="help-circle-outline" size={24} color={currentTheme.primary} style={styles.menuIcon} />
+            <Text style={[styles.menuText, { color: currentTheme.text }]}>FAQ</Text>
           </View>
-          <Ionicons name="chevron-forward" size={20} color="#999" />
+          <Ionicons name="chevron-forward" size={20} color={currentTheme.placeholder} />
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.menuItem} onPress={contactSupport}>
+        <TouchableOpacity
+          style={[styles.menuItem, { borderBottomColor: currentTheme.border }]}
+          onPress={contactSupport}
+        >
           <View style={styles.menuItemContent}>
-            <Ionicons name="mail-outline" size={24} color="#666" style={styles.menuIcon} />
-            <Text style={styles.menuText}>Contact Us</Text>
+            <Ionicons name="mail-outline" size={24} color={currentTheme.primary} style={styles.menuIcon} />
+            <Text style={[styles.menuText, { color: currentTheme.text }]}>Contact Us</Text>
           </View>
-          <Ionicons name="chevron-forward" size={20} color="#999" />
+          <Ionicons name="chevron-forward" size={20} color={currentTheme.placeholder} />
         </TouchableOpacity>
       </View>
 
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Legal</Text>
+      <View style={[styles.section, { backgroundColor: currentTheme.card }]}>
+        <Text style={[styles.sectionTitle, { color: currentTheme.primary }]}>Legal</Text>
 
-        <TouchableOpacity style={styles.menuItem} onPress={openTerms}>
+        <TouchableOpacity
+          style={[styles.menuItem, { borderBottomColor: currentTheme.border }]}
+          onPress={openTerms}
+        >
           <View style={styles.menuItemContent}>
-            <Ionicons name="document-text-outline" size={24} color="#666" style={styles.menuIcon} />
-            <Text style={styles.menuText}>Terms of Service</Text>
+            <Ionicons name="document-text-outline" size={24} color={currentTheme.primary} style={styles.menuIcon} />
+            <Text style={[styles.menuText, { color: currentTheme.text }]}>Terms of Service</Text>
           </View>
-          <Ionicons name="chevron-forward" size={20} color="#999" />
+          <Ionicons name="chevron-forward" size={20} color={currentTheme.placeholder} />
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.menuItem} onPress={openPrivacyPolicy}>
+        <TouchableOpacity
+          style={[styles.menuItem, { borderBottomColor: currentTheme.border }]}
+          onPress={openPrivacyPolicy}
+        >
           <View style={styles.menuItemContent}>
-            <Ionicons name="lock-closed-outline" size={24} color="#666" style={styles.menuIcon} />
-            <Text style={styles.menuText}>Privacy Policy</Text>
+            <Ionicons name="lock-closed-outline" size={24} color={currentTheme.primary} style={styles.menuIcon} />
+            <Text style={[styles.menuText, { color: currentTheme.text }]}>Privacy Policy</Text>
           </View>
-          <Ionicons name="chevron-forward" size={20} color="#999" />
+          <Ionicons name="chevron-forward" size={20} color={currentTheme.placeholder} />
         </TouchableOpacity>
       </View>
 
       <View style={styles.appInfoContainer}>
-        <Text style={styles.appName}>CALLNOW</Text>
-        <Text style={styles.appVersion}>Version 1.0.0</Text>
-        <Text style={styles.copyright}>© 2025 CALLNOW</Text>
-        <Text style={styles.disclaimer}>
+        <Text style={[styles.appName, { color: currentTheme.text }]}>CALLNOW</Text>
+        <Text style={[styles.appVersion, { color: currentTheme.placeholder }]}>Version 1.0.0</Text>
+        <Text style={[styles.copyright, { color: currentTheme.placeholder }]}>© 2025 CALLNOW</Text>
+        <Text style={[styles.disclaimer, { color: currentTheme.placeholder }]}>
           This application created solely for final year project and is not affiliated with or endorsed by WhatsApp Inc. or any other company.
         </Text>
       </View>
@@ -79,16 +97,13 @@ const HelpScreen = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#F8F8F8",
   },
   section: {
-    backgroundColor: "#FFFFFF",
     marginBottom: 20,
     paddingVertical: 5,
   },
   sectionTitle: {
     fontSize: 14,
-    color: "#128C7E",
     fontWeight: "bold",
     paddingHorizontal: 15,
     paddingVertical: 10,
@@ -100,7 +115,6 @@ const styles = StyleSheet.create({
     paddingVertical: 15,
     paddingHorizontal: 15,
     borderBottomWidth: 1,
-    borderBottomColor: "#F0F0F0",
   },
   menuItemContent: {
     flexDirection: "row",
@@ -125,17 +139,14 @@ const styles = StyleSheet.create({
   },
   appVersion: {
     fontSize: 14,
-    color: "#666",
     marginBottom: 10,
   },
   copyright: {
     fontSize: 12,
-    color: "#999",
     marginBottom: 10,
   },
   disclaimer: {
     fontSize: 12,
-    color: "#999",
     textAlign: "center",
   },
 })

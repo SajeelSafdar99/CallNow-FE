@@ -232,7 +232,7 @@ export const startCallQualityMonitoring = (peerConnection, callId, callType, tok
       }
 
       // Import dynamically to avoid circular dependencies
-      const CallsAPI = require("../api/calls")
+      const CallsAPI = require("../api/call")
       await CallsAPI.logCallMetrics(metricsData, token)
 
       // Log locally for debugging
@@ -294,7 +294,7 @@ export const getOptimalIceServers = async (token) => {
     const region = await detectNetworkRegion()
 
     // Import dynamically to avoid circular dependencies
-    const CallsAPI = require("../api/calls")
+    const CallsAPI = require("../api/call")
     const response = await CallsAPI.getIceServers(token, { region })
 
     if (response.success && response.iceServers && response.iceServers.length > 0) {
