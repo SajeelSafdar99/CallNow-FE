@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "34513178821",
+    "project_id": "callnow-1b53e",
+    "storage_bucket": "callnow-1b53e.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:34513178821:android:b5fd21c1e285ccfa0f60ac",
+        "android_client_info": {
+          "package_name": "com.callnow"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCEOjSZftuJAVz2kHU2LjjK-P0l-KB3ZvQ"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

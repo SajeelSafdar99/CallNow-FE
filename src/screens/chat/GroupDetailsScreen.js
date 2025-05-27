@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useState, useEffect, useContext } from "react"
+import { useState, useEffect, useContext } from "react"
 import {
   View,
   Text,
@@ -18,6 +18,7 @@ import { useNavigation, useRoute } from "@react-navigation/native"
 import Ionicons from "react-native-vector-icons/Ionicons"
 import { AuthContext } from "../../context/AuthContext"
 import { ThemeContext } from "../../context/ThemeContext"
+import { SocketContext } from "../../context/SocketContext" // Add this import
 import { getTheme } from "../../utils/theme"
 import * as ConversationsAPI from "../../api/conversations"
 import * as ContactsAPI from "../../api/contacts"
@@ -30,6 +31,7 @@ const GroupDetailsScreen = () => {
   const { conversation } = route.params
   const { state: authState } = useContext(AuthContext)
   const { theme } = useContext(ThemeContext)
+  const { socket, isConnected } = useContext(SocketContext) // Add this line
   const currentTheme = getTheme(theme)
 
   const [groupInfo, setGroupInfo] = useState(conversation)
@@ -46,6 +48,7 @@ const GroupDetailsScreen = () => {
   const [selectedContacts, setSelectedContacts] = useState([])
   const [isAddingParticipants, setIsAddingParticipants] = useState(false)
   const [isChangingImage, setIsChangingImage] = useState(false)
+  const [onlineParticipants, setOnlineParticipants] = useState([]) // Add this state
 
   // Check if current user is admin
   useEffect(() => {
@@ -53,6 +56,88 @@ const GroupDetailsScreen = () => {
       setIsAdmin(groupInfo.groupAdmin.toString() === authState.user.id)
     }
   }, [groupInfo, authState.user.id])
+
+  // Listen for group updates via socket
+  useEffect(() => {
+    if (socket && isConnected) {
+      // Join the group room to receive updates
+      socket.emit("join-group-room", groupInfo._id)
+
+      // Listen for group updates
+      const handleGroupUpdate = (updatedGroup) => {
+        if (updatedGroup._id === groupInfo._id) {
+          setGroupInfo(updatedGroup)
+        }
+      }
+
+      // Listen for participant added
+      const handleParticipantAdded = ({ groupId, participant }) => {
+        if (groupId === groupInfo._id) {
+          setGroupInfo((prev) => ({
+            ...prev,
+            participants: [...prev.participants, participant],
+          }))
+        }
+      }
+
+      // Listen for participant removed
+      const handleParticipantRemoved = ({ groupId, participantId }) => {
+        if (groupId === groupInfo._id) {
+          setGroupInfo((prev) => ({
+            ...prev,
+            participants: prev.participants.filter((p) => p._id !== participantId),
+          }))
+        }
+      }
+
+      // Listen for admin changed
+      const handleAdminChanged = ({ groupId, newAdminId }) => {
+        if (groupId === groupInfo._id) {
+          setGroupInfo((prev) => ({
+            ...prev,
+            groupAdmin: newAdminId,
+          }))
+          setIsAdmin(newAdminId === authState.user.id)
+        }
+      }
+
+      // Listen for online status changes
+      const handleStatusChange = ({ userId, status }) => {
+        if (status === "online") {
+          setOnlineParticipants((prev) => (prev.includes(userId) ? prev : [...prev, userId]))
+        } else {
+          setOnlineParticipants((prev) => prev.filter((id) => id !== userId))
+        }
+      }
+
+      socket.on("group-updated", handleGroupUpdate)
+      socket.on("participant-added", handleParticipantAdded)
+      socket.on("participant-removed", handleParticipantRemoved)
+      socket.on("admin-changed", handleAdminChanged)
+      socket.on("user-status-change", handleStatusChange)
+
+      // Get initial online status of participants
+      groupInfo.participants.forEach((participant) => {
+        socket.emit("get-user-status", { userId: participant._id })
+      })
+
+      socket.on("user-status", ({ userId, status }) => {
+        if (status === "online") {
+          setOnlineParticipants((prev) => (prev.includes(userId) ? prev : [...prev, userId]))
+        }
+      })
+
+      return () => {
+        socket.emit("leave-group-room", groupInfo._id)
+        socket.off("group-updated", handleGroupUpdate)
+        socket.off("participant-added", handleParticipantAdded)
+        socket.off("participant-removed", handleParticipantRemoved)
+        socket.off("admin-changed", handleAdminChanged)
+        socket.off("user-status-change", handleStatusChange)
+        socket.off("user-status")
+      }
+    }
+  }, [socket, isConnected, groupInfo._id])
 
   // Fetch contacts for adding participants
   const fetchContacts = async () => {
@@ -62,9 +147,9 @@ const GroupDetailsScreen = () => {
 
       if (response.success) {
         // Filter out contacts that are already in the group
-        const existingParticipantIds = groupInfo.participants.map(p => p._id)
+        const existingParticipantIds = groupInfo.participants.map((p) => p._id)
         const availableContacts = response.contacts.filter(
-          contact => !existingParticipantIds.includes(contact.user._id)
+          (contact) => !existingParticipantIds.includes(contact.user._id),
         )
 
         setContacts(availableContacts)
@@ -86,13 +171,12 @@ const GroupDetailsScreen = () => {
       setFilteredContacts(contacts)
     } else {
       const query = searchQuery.toLowerCase()
-      const filtered = contacts.filter(
-        (contact) => {
-          const name = contact.nickname || contact.user.name
-          return name.toLowerCase().includes(query) ||
-            (contact.user.phoneNumber && contact.user.phoneNumber.includes(query))
-        }
-      )
+      const filtered = contacts.filter((contact) => {
+        const name = contact.nickname || contact.user.name
+        return (
+          name.toLowerCase().includes(query) || (contact.user.phoneNumber && contact.user.phoneNumber.includes(query))
+        )
+      })
       setFilteredContacts(filtered)
     }
   }, [searchQuery, contacts])
@@ -109,13 +193,21 @@ const GroupDetailsScreen = () => {
       const response = await ConversationsAPI.updateGroupInfo(
         groupInfo._id,
         { name: newGroupName.trim() },
-        authState.token
+        authState.token,
       )
 
       if (response.success) {
         setGroupInfo(response.conversation)
         setIsEditingName(false)
         Alert.alert("Success", "Group name updated successfully")
+
+        // Emit group update event if socket is connected
+        if (socket && isConnected) {
+          socket.emit("update-group", {
+            groupId: groupInfo._id,
+            updates: { groupName: newGroupName.trim() },
+          })
+        }
       } else {
         Alert.alert("Error", response.error || "Failed to update group name")
       }
@@ -134,13 +226,21 @@ const GroupDetailsScreen = () => {
       const response = await ConversationsAPI.updateGroupInfo(
         groupInfo._id,
         { description: newGroupDescription.trim() },
-        authState.token
+        authState.token,
       )
 
       if (response.success) {
         setGroupInfo(response.conversation)
         setIsEditingDescription(false)
         Alert.alert("Success", "Group description updated successfully")
+
+        // Emit group update event if socket is connected
+        if (socket && isConnected) {
+          socket.emit("update-group", {
+            groupId: groupInfo._id,
+            updates: { groupDescription: newGroupDescription.trim() },
+          })
+        }
       } else {
         Alert.alert("Error", response.error || "Failed to update group description")
       }
@@ -156,7 +256,7 @@ const GroupDetailsScreen = () => {
   const handleChangeGroupImage = async () => {
     try {
       const result = await launchImageLibrary({
-        mediaType: 'photo',
+        mediaType: "photo",
         quality: 0.8,
         includeBase64: false,
       })
@@ -175,21 +275,25 @@ const GroupDetailsScreen = () => {
 
         // Create form data for image upload
         const formData = new FormData()
-        formData.append('groupImage', {
+        formData.append("groupImage", {
           uri: selectedImage.uri,
-          type: selectedImage.type || 'image/jpeg',
-          name: selectedImage.fileName || 'group_image.jpg',
+          type: selectedImage.type || "image/jpeg",
+          name: selectedImage.fileName || "group_image.jpg",
         })
 
-        const response = await ConversationsAPI.updateGroupImage(
-          groupInfo._id,
-          formData,
-          authState.token
-        )
+        const response = await ConversationsAPI.updateGroupImage(groupInfo._id, formData, authState.token)
 
         if (response.success) {
           setGroupInfo(response.conversation)
           Alert.alert("Success", "Group image updated successfully")
+
+          // Emit group update event if socket is connected
+          if (socket && isConnected) {
+            socket.emit("update-group", {
+              groupId: groupInfo._id,
+              updates: { groupImage: response.conversation.groupImage },
+            })
+          }
         } else {
           Alert.alert("Error", response.error || "Failed to update group image")
         }
@@ -213,19 +317,28 @@ const GroupDetailsScreen = () => {
       setIsAddingParticipants(true)
 
       // Extract participant IDs
-      const participantIds = selectedContacts.map(contact => contact.user._id)
+      const participantIds = selectedContacts.map((contact) => contact.user._id)
 
-      const response = await ConversationsAPI.addParticipants(
-        groupInfo._id,
-        participantIds,
-        authState.token
-      )
+      const response = await ConversationsAPI.addParticipants(groupInfo._id, participantIds, authState.token)
 
       if (response.success) {
         setGroupInfo(response.conversation)
         setShowAddParticipantsModal(false)
         setSelectedContacts([])
         Alert.alert("Success", "Participants added successfully")
+
+        // Emit participant added event if socket is connected
+        if (socket && isConnected) {
+          participantIds.forEach((participantId) => {
+            const participant = response.conversation.participants.find((p) => p._id === participantId)
+            if (participant) {
+              socket.emit("add-participant", {
+                groupId: groupInfo._id,
+                participant,
+              })
+            }
+          })
+        }
       } else {
         Alert.alert("Error", response.error || "Failed to add participants")
       }
@@ -259,15 +372,19 @@ const GroupDetailsScreen = () => {
           onPress: async () => {
             try {
               setIsLoading(true)
-              const response = await ConversationsAPI.removeParticipant(
-                groupInfo._id,
-                participant._id,
-                authState.token
-              )
+              const response = await ConversationsAPI.removeParticipant(groupInfo._id, participant._id, authState.token)
 
               if (response.success) {
                 setGroupInfo(response.conversation)
                 Alert.alert("Success", "Participant removed successfully")
+
+                // Emit participant removed event if socket is connected
+                if (socket && isConnected) {
+                  socket.emit("remove-participant", {
+                    groupId: groupInfo._id,
+                    participantId: participant._id,
+                  })
+                }
               } else {
                 Alert.alert("Error", response.error || "Failed to remove participant")
               }
@@ -280,7 +397,7 @@ const GroupDetailsScreen = () => {
           },
         },
       ],
-      { cancelable: true }
+      { cancelable: true },
     )
   }
 
@@ -299,16 +416,20 @@ const GroupDetailsScreen = () => {
           onPress: async () => {
             try {
               setIsLoading(true)
-              const response = await ConversationsAPI.makeAdmin(
-                groupInfo._id,
-                participant._id,
-                authState.token
-              )
+              const response = await ConversationsAPI.makeAdmin(groupInfo._id, participant._id, authState.token)
 
               if (response.success) {
                 setGroupInfo(response.conversation)
                 setIsAdmin(false)
                 Alert.alert("Success", `${participant.name} is now the admin`)
+
+                // Emit admin changed event if socket is connected
+                if (socket && isConnected) {
+                  socket.emit("change-admin", {
+                    groupId: groupInfo._id,
+                    newAdminId: participant._id,
+                  })
+                }
               } else {
                 Alert.alert("Error", response.error || "Failed to change admin")
               }
@@ -321,7 +442,7 @@ const GroupDetailsScreen = () => {
           },
         },
       ],
-      { cancelable: true }
+      { cancelable: true },
     )
   }
 
@@ -341,13 +462,19 @@ const GroupDetailsScreen = () => {
           onPress: async () => {
             try {
               setIsLoading(true)
-              const response = await ConversationsAPI.leaveGroup(
-                groupInfo._id,
-                authState.token
-              )
+              const response = await ConversationsAPI.leaveGroup(groupInfo._id, authState.token)
 
               if (response.success) {
                 Alert.alert("Success", "You have left the group")
+
+                // Emit leave group event if socket is connected
+                if (socket && isConnected) {
+                  socket.emit("leave-group", {
+                    groupId: groupInfo._id,
+                    userId: authState.user.id,
+                  })
+                }
+
                 navigation.navigate("ChatsList")
               } else {
                 Alert.alert("Error", response.error || "Failed to leave group")
@@ -361,46 +488,54 @@ const GroupDetailsScreen = () => {
           },
         },
       ],
-      { cancelable: true }
+      { cancelable: true },
     )
   }
 
   // Toggle contact selection for adding to group
   const toggleContactSelection = (contact) => {
-    if (selectedContacts.some(c => c._id === contact._id)) {
-      setSelectedContacts(selectedContacts.filter(c => c._id !== contact._id))
+    if (selectedContacts.some((c) => c._id === contact._id)) {
+      setSelectedContacts(selectedContacts.filter((c) => c._id !== contact._id))
     } else {
       setSelectedContacts([...selectedContacts, contact])
     }
   }
 
   // Render participant item
-// Update the renderParticipantItem function
   const renderParticipantItem = ({ item }) => {
     const isParticipantAdmin = groupInfo.groupAdmin === item._id
     const isCurrentUser = item._id === authState.user.id
+    const isOnline = onlineParticipants.includes(item._id)
 
     return (
       <View style={[styles.participantItem, { backgroundColor: currentTheme.card }]}>
         <View style={styles.participantInfo}>
-          {item.profilePicture ? (
-            <Image
-              source={{ uri: `${API_BASE_URL_FOR_MEDIA}${item.profilePicture}` }}
-              style={styles.participantAvatar}
-            />
-          ) : (
-            <View style={[styles.defaultAvatar, { backgroundColor: currentTheme.primary }]}>
-              <Text style={styles.avatarText}>{item.name.charAt(0).toUpperCase()}</Text>
-            </View>
-          )}
+          <View style={styles.avatarContainer}>
+            {item.profilePicture ? (
+              <Image
+                source={{ uri: `${API_BASE_URL_FOR_MEDIA}${item.profilePicture}` }}
+                style={styles.participantAvatar}
+              />
+            ) : (
+              <View style={[styles.defaultAvatar, { backgroundColor: currentTheme.primary }]}>
+                <Text style={styles.avatarText}>{item.name.charAt(0).toUpperCase()}</Text>
+              </View>
+            )}
+
+            {/* Online indicator */}
+            {isOnline && <View style={styles.onlineIndicator} />}
+          </View>
 
           <View style={styles.participantDetails}>
             <Text style={[styles.participantName, { color: currentTheme.text }]}>
               {item.name} {isCurrentUser ? "(You)" : ""}
             </Text>
-            {isParticipantAdmin && (
-              <Text style={[styles.adminBadge, { color: currentTheme.primary }]}>Admin</Text>
-            )}
+            {isParticipantAdmin && <Text style={[styles.adminBadge, { color: currentTheme.primary }]}>Admin</Text>}
+
+            {/* Online status text */}
+            <Text style={[styles.statusText, { color: isOnline ? "#4CAF50" : currentTheme.placeholder }]}>
+              {isOnline ? "Online" : "Offline"}
+            </Text>
           </View>
         </View>
 
@@ -408,10 +543,7 @@ const GroupDetailsScreen = () => {
         {!isParticipantAdmin && !isCurrentUser && (
           <View style={styles.participantActions}>
             {isAdmin && (
-              <TouchableOpacity
-                style={styles.actionButton}
-                onPress={() => handleMakeAdmin(item)}
-              >
+              <TouchableOpacity style={styles.actionButton} onPress={() => handleMakeAdmin(item)}>
                 <Text style={[styles.actionText, { color: currentTheme.primary }]}>Make Admin</Text>
               </TouchableOpacity>
             )}
@@ -433,10 +565,11 @@ const GroupDetailsScreen = () => {
       </View>
     )
   }
+
   // Render contact item for adding to group
   const renderContactItem = ({ item }) => {
     const contactName = item.nickname || item.user.name
-    const isSelected = selectedContacts.some(c => c._id === item._id)
+    const isSelected = selectedContacts.some((c) => c._id === item._id)
 
     return (
       <TouchableOpacity
@@ -463,9 +596,7 @@ const GroupDetailsScreen = () => {
 
           <View style={styles.contactDetails}>
             <Text style={[styles.contactName, { color: currentTheme.text }]}>{contactName}</Text>
-            <Text style={[styles.contactPhone, { color: currentTheme.placeholder }]}>
-              {item.user.phoneNumber}
-            </Text>
+            <Text style={[styles.contactPhone, { color: currentTheme.placeholder }]}>{item.user.phoneNumber}</Text>
           </View>
         </View>
 
@@ -489,10 +620,7 @@ const GroupDetailsScreen = () => {
             <ActivityIndicator size="large" color="#FFFFFF" />
           </View>
         ) : groupInfo.groupImage ? (
-          <Image
-            source={{ uri: `${API_BASE_URL_FOR_MEDIA}${groupInfo.groupImage}` }}
-            style={styles.groupImage}
-          />
+          <Image source={{ uri: `${API_BASE_URL_FOR_MEDIA}${groupInfo.groupImage}` }} style={styles.groupImage} />
         ) : (
           <View style={[styles.defaultGroupImage, { backgroundColor: currentTheme.primary }]}>
             <Ionicons name="people" size={60} color="#FFFFFF" />
@@ -543,10 +671,7 @@ const GroupDetailsScreen = () => {
           <View style={styles.nameContainer}>
             <Text style={[styles.groupName, { color: currentTheme.text }]}>{groupInfo.groupName}</Text>
             {isAdmin && (
-              <TouchableOpacity
-                style={styles.editNameButton}
-                onPress={() => setIsEditingName(true)}
-              >
+              <TouchableOpacity style={styles.editNameButton} onPress={() => setIsEditingName(true)}>
                 <Ionicons name="pencil" size={20} color={currentTheme.primary} />
               </TouchableOpacity>
             )}
@@ -556,6 +681,11 @@ const GroupDetailsScreen = () => {
         <Text style={[styles.groupCreated, { color: currentTheme.placeholder }]}>
           Created on {new Date(groupInfo.createdAt).toLocaleDateString()}
         </Text>
+
+        {/* Online participants count */}
+        <Text style={[styles.onlineCount, { color: currentTheme.primary }]}>
+          {onlineParticipants.length} online of {groupInfo.participants.length} participants
+        </Text>
       </View>
 
       {/* Group Description */}
@@ -563,10 +693,7 @@ const GroupDetailsScreen = () => {
         <View style={styles.sectionHeader}>
           <Text style={[styles.sectionTitle, { color: currentTheme.text }]}>Description</Text>
           {isAdmin && !isEditingDescription && (
-            <TouchableOpacity
-              style={styles.editButton}
-              onPress={() => setIsEditingDescription(true)}
-            >
+            <TouchableOpacity style={styles.editButton} onPress={() => setIsEditingDescription(true)}>
               <Ionicons name="pencil" size={20} color={currentTheme.primary} />
             </TouchableOpacity>
           )}
@@ -641,10 +768,7 @@ const GroupDetailsScreen = () => {
       </View>
 
       {/* Leave Group Button */}
-      <TouchableOpacity
-        style={[styles.leaveButton, { borderColor: "#FF3B30" }]}
-        onPress={handleLeaveGroup}
-      >
+      <TouchableOpacity style={[styles.leaveButton, { borderColor: "#FF3B30" }]} onPress={handleLeaveGroup}>
         <Ionicons name="exit-outline" size={24} color="#FF3B30" />
         <Text style={styles.leaveButtonText}>Leave Group</Text>
       </TouchableOpacity>
@@ -682,8 +806,8 @@ const GroupDetailsScreen = () => {
                     styles.addButton,
                     {
                       color: currentTheme.primary,
-                      opacity: selectedContacts.length === 0 ? 0.5 : 1
-                    }
+                      opacity: selectedContacts.length === 0 ? 0.5 : 1,
+                    },
                   ]}
                 >
                   Add
@@ -700,7 +824,7 @@ const GroupDetailsScreen = () => {
               contentContainerStyle={styles.selectedContactsContent}
               showsHorizontalScrollIndicator={false}
             >
-              {selectedContacts.map(contact => {
+              {selectedContacts.map((contact) => {
                 const contactName = contact.nickname || contact.user.name
                 return (
                   <View
@@ -831,6 +955,12 @@ const styles = StyleSheet.create({
   groupCreated: {
     fontSize: 12,
     textAlign: "center",
+    marginBottom: 5,
+  },
+  onlineCount: {
+    fontSize: 14,
+    textAlign: "center",
+    fontWeight: "500",
   },
   editNameContainer: {
     width: "100%",
@@ -907,11 +1037,14 @@ const styles = StyleSheet.create({
     alignItems: "center",
     flex: 1,
   },
+  avatarContainer: {
+    position: "relative",
+    marginRight: 10,
+  },
   participantAvatar: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    marginRight: 10,
   },
   defaultAvatar: {
     width: 40,
@@ -919,12 +1052,22 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     alignItems: "center",
     justifyContent: "center",
-    marginRight: 10,
   },
   avatarText: {
     color: "#FFFFFF",
     fontSize: 18,
     fontWeight: "bold",
+  },
+  onlineIndicator: {
+    position: "absolute",
+    bottom: 0,
+    right: 0,
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: "#4CAF50",
+    borderWidth: 2,
+    borderColor: "white",
   },
   participantDetails: {
     flex: 1,
@@ -936,6 +1079,9 @@ const styles = StyleSheet.create({
   adminBadge: {
     fontSize: 12,
     fontWeight: "bold",
+  },
+  statusText: {
+    fontSize: 12,
   },
   participantActions: {
     flexDirection: "row",

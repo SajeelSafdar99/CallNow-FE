@@ -1,7 +1,7 @@
 "use client"
 
 import { useContext, useEffect, useState } from "react"
-import { View, Text, StyleSheet, TouchableOpacity, Image, Vibration, Animated } from "react-native"
+import {View, Text, StyleSheet, TouchableOpacity, Image, Vibration, Animated, Platform} from 'react-native';
 import { Ionicons } from "@expo/vector-icons"
 import { NotificationContext } from "../../context/NotificationContext"
 import { API_BASE_URL } from "../../config/api"
@@ -47,7 +47,20 @@ const CallNotification = () => {
   // Start ringing sound and vibration
   const startRinging = async () => {
     // Start vibration pattern
-    Vibration.vibrate([500, 1000, 500, 1000], true)
+    const ONE_SECOND_IN_MS = 1000;
+
+    const PATTERN = [
+      1 * ONE_SECOND_IN_MS,
+      2 * ONE_SECOND_IN_MS,
+      3 * ONE_SECOND_IN_MS,
+    ];
+    if (Platform.OS === 'android') {
+      // For Android, ensure all values are numbers
+      Vibration.vibrate(PATTERN,true);
+    } else {
+      // For iOS
+      Vibration.vibrate(PATTERN);
+    }
 
     // Play sound (using Expo Audio would be implemented here)
     // For brevity, we're not implementing the actual sound playback

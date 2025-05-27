@@ -1,5 +1,6 @@
-const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || "http://192.168.10.6:5001/api"
-const API_BASE_URL_FOR_MEDIA = process.env.REACT_APP_API_BASE_URL_FOR_MEDIA || "http://192.168.10.6:5001"
+const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || "http://192.168.10.28:5001/api"
+const API_BASE_URL_FOR_MEDIA = process.env.REACT_APP_API_BASE_URL_FOR_MEDIA || "http://192.168.10.28:5001"
+const SOCKET_URL = process.env.REACT_APP_SOCKET_URL || "http://192.168.10.28:5001"
 const API_ENDPOINTS = {
   // Auth endpoints
   REGISTER: "/auth/register",
@@ -97,4 +98,4 @@ const API_ENDPOINTS = {
   START_FREE_TRIAL: "/subscriptions/trial",
 }
 
-export { API_BASE_URL, API_ENDPOINTS, API_BASE_URL_FOR_MEDIA }
+export { API_BASE_URL, API_ENDPOINTS, API_BASE_URL_FOR_MEDIA, SOCKET_URL }

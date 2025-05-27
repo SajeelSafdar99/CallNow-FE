@@ -17,6 +17,7 @@ import { useNavigation, useRoute } from "@react-navigation/native"
 import Ionicons from "react-native-vector-icons/Ionicons"
 import { AuthContext } from "../../context/AuthContext"
 import { ThemeContext } from "../../context/ThemeContext"
+import { SocketContext } from "../../context/SocketContext" // Add this import
 import { getTheme } from "../../utils/theme"
 import * as UsersAPI from "../../api/users"
 import * as ConversationsAPI from "../../api/conversations"
@@ -28,11 +29,13 @@ const UserProfileScreen = () => {
   const { userId, userName, userImage } = route.params
   const { state: authState } = useContext(AuthContext)
   const { theme } = useContext(ThemeContext)
+  const { socket, isConnected } = useContext(SocketContext) // Add this line
   const currentTheme = getTheme(theme)
 
   const [userProfile, setUserProfile] = useState(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState(null)
+  const [isUserOnline, setIsUserOnline] = useState(false) // Add this state
 
   // Fetch user profile
   useEffect(() => {
@@ -56,6 +59,35 @@ const UserProfileScreen = () => {
 
     fetchUserProfile()
   }, [userId, authState.token])
+
+  // Listen for online status changes
+  useEffect(() => {
+    if (socket && isConnected) {
+      // Check if user is already online
+      socket.emit("get-user-status", { userId })
+
+      // Listen for status changes
+      const handleStatusChange = ({ userId: changedUserId, status }) => {
+        if (changedUserId === userId) {
+          setIsUserOnline(status === "online")
+        }
+      }
+
+      socket.on("user-status-change", handleStatusChange)
+
+      // Listen for initial status response
+      socket.on("user-status", ({ userId: checkedUserId, status }) => {
+        if (checkedUserId === userId) {
+          setIsUserOnline(status === "online")
+        }
+      })
+
+      return () => {
+        socket.off("user-status-change", handleStatusChange)
+        socket.off("user-status")
+      }
+    }
+  }, [socket, isConnected, userId])
 
   // Start a chat with this user
   const handleStartChat = async () => {
@@ -164,10 +196,20 @@ const UserProfileScreen = () => {
               </Text>
             </View>
           )}
+
+          {/* Online status indicator */}
+          {isUserOnline && (
+            <View style={styles.onlineIndicator} />
+          )}
         </View>
 
         <Text style={[styles.userName, { color: currentTheme.text }]}>{userProfile?.name}</Text>
         <Text style={[styles.userPhone, { color: currentTheme.placeholder }]}>{userProfile?.phoneNumber}</Text>
+
+        {/* Online status text */}
+        <Text style={[styles.onlineStatus, { color: isUserOnline ? '#4CAF50' : currentTheme.placeholder }]}>
+          {isUserOnline ? 'Online' : 'Offline'}
+        </Text>
 
         {/* Action Buttons */}
         <View style={styles.actionButtons}>
@@ -270,6 +312,7 @@ const styles = StyleSheet.create({
   },
   profileImageContainer: {
     marginBottom: 15,
+    position: 'relative',
   },
   profileImage: {
     width: 120,
@@ -288,6 +331,17 @@ const styles = StyleSheet.create({
     fontSize: 50,
     fontWeight: "bold",
   },
+  onlineIndicator: {
+    position: 'absolute',
+    bottom: 5,
+    right: 5,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: '#4CAF50',
+    borderWidth: 3,
+    borderColor: 'white',
+  },
   userName: {
     fontSize: 22,
     fontWeight: "bold",
@@ -295,7 +349,11 @@ const styles = StyleSheet.create({
   },
   userPhone: {
     fontSize: 16,
-    marginBottom: 20,
+    marginBottom: 5,
+  },
+  onlineStatus: {
+    fontSize: 14,
+    marginBottom: 15,
   },
   actionButtons: {
     flexDirection: "row",

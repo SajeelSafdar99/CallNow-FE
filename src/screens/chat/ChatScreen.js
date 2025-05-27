@@ -93,25 +93,28 @@ const ChatScreen = () => {
   const inputRef = useRef(null)
   const recordingTimerRef = useRef(null)
 
+  // Add the new state variable for isOtherUserOnline
+  const [isOtherUserOnline, setIsOtherUserOnline] = useState(false)
+
   // Hide bottom tabs when this screen is focused
   useFocusEffect(
-    React.useCallback(() => {
-      // Hide the tab bar
-      navigation.getParent()?.setOptions({
-        tabBarStyle: { display: "none" },
-      })
-
-      return () => {
-        // Restore the tab bar when leaving this screen
+      React.useCallback(() => {
+        // Hide the tab bar
         navigation.getParent()?.setOptions({
-          tabBarStyle: {
-            display: "flex",
-            backgroundColor: currentTheme.card,
-            borderTopColor: currentTheme.border,
-          },
+          tabBarStyle: { display: "none" },
         })
-      }
-    }, [navigation, currentTheme]),
+
+        return () => {
+          // Restore the tab bar when leaving this screen
+          navigation.getParent()?.setOptions({
+            tabBarStyle: {
+              display: "flex",
+              backgroundColor: currentTheme.card,
+              borderTopColor: currentTheme.border,
+            },
+          })
+        }
+      }, [navigation, currentTheme]),
   )
 
   // Request permissions
@@ -127,14 +130,14 @@ const ChatScreen = () => {
         })
 
         const storagePermission = await PermissionsAndroid.request(
-          PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE,
-          {
-            title: "Storage Permission",
-            message: "CallNow needs access to your storage to select photos and documents.",
-            buttonNeutral: "Ask Me Later",
-            buttonNegative: "Cancel",
-            buttonPositive: "OK",
-          },
+            PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE,
+            {
+              title: "Storage Permission",
+              message: "CallNow needs access to your storage to select photos and documents.",
+              buttonNeutral: "Ask Me Later",
+              buttonNegative: "Cancel",
+              buttonPositive: "OK",
+            },
         )
 
         // For Android 13+ we need to request WRITE_EXTERNAL_STORAGE separately
@@ -197,19 +200,19 @@ const ChatScreen = () => {
   // Handle keyboard events
   useEffect(() => {
     const keyboardDidShowListener = Keyboard.addListener(
-      Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow",
-      (e) => {
-        setKeyboardHeight(e.endCoordinates.height)
-        setKeyboardVisible(true)
-      },
+        Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow",
+        (e) => {
+          setKeyboardHeight(e.endCoordinates.height)
+          setKeyboardVisible(true)
+        },
     )
 
     const keyboardDidHideListener = Keyboard.addListener(
-      Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide",
-      () => {
-        setKeyboardHeight(0)
-        setKeyboardVisible(false)
-      },
+        Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide",
+        () => {
+          setKeyboardHeight(0)
+          setKeyboardVisible(false)
+        },
     )
 
     // Request permissions when component mounts
@@ -316,16 +319,16 @@ const ChatScreen = () => {
 
       // Send message to server
       const response = await MessagesAPI.sendTextMessage(
-        conversation._id,
-        inputMessage.trim(),
-        replyTo?._id,
-        authState.token,
+          conversation._id,
+          inputMessage.trim(),
+          replyTo?._id,
+          authState.token,
       )
 
       if (response.success) {
         // Replace optimistic message with actual message from server
         setMessages((prevMessages) =>
-          prevMessages.map((msg) => (msg._id === messageData._id ? { ...response.message, isOptimistic: false } : msg)),
+            prevMessages.map((msg) => (msg._id === messageData._id ? { ...response.message, isOptimistic: false } : msg)),
         )
 
         // Send message via socket for real-time update
@@ -333,7 +336,7 @@ const ChatScreen = () => {
       } else {
         // Handle error - mark message as failed
         setMessages((prevMessages) =>
-          prevMessages.map((msg) => (msg._id === messageData._id ? { ...msg, failed: true } : msg)),
+            prevMessages.map((msg) => (msg._id === messageData._id ? { ...msg, failed: true } : msg)),
         )
       }
     } catch (error) {
@@ -386,20 +389,20 @@ const ChatScreen = () => {
 
         // Send to server
         const response = await MessagesAPI.sendMediaGroupMessage(
-          conversation._id,
-          content || `${contentType.charAt(0).toUpperCase() + contentType.slice(1)} Group`,
-          mediaFiles,
-          contentType,
-          replyTo?._id,
-          authState.token,
+            conversation._id,
+            content || `${contentType.charAt(0).toUpperCase() + contentType.slice(1)} Group`,
+            mediaFiles,
+            contentType,
+            replyTo?._id,
+            authState.token,
         )
 
         if (response.success) {
           // Replace optimistic message with actual message
           setMessages((prevMessages) =>
-            prevMessages.map((msg) =>
-              msg._id === messageData._id ? { ...response.message, isOptimistic: false, isUploading: false } : msg,
-            ),
+              prevMessages.map((msg) =>
+                  msg._id === messageData._id ? { ...response.message, isOptimistic: false, isUploading: false } : msg,
+              ),
           )
 
           // Send via socket
@@ -407,9 +410,9 @@ const ChatScreen = () => {
         } else {
           // Handle error
           setMessages((prevMessages) =>
-            prevMessages.map((msg) =>
-              msg._id === messageData._id ? { ...msg, failed: true, isUploading: false } : msg,
-            ),
+              prevMessages.map((msg) =>
+                  msg._id === messageData._id ? { ...msg, failed: true, isUploading: false } : msg,
+              ),
           )
         }
       } else {
@@ -444,20 +447,20 @@ const ChatScreen = () => {
 
         // Send to server
         const response = await MessagesAPI.sendMediaMessage(
-          conversation._id,
-          content || `${contentType.charAt(0).toUpperCase() + contentType.slice(1)}`,
-          mediaFile,
-          contentType,
-          replyTo?._id,
-          authState.token,
+            conversation._id,
+            content || `${contentType.charAt(0).toUpperCase() + contentType.slice(1)}`,
+            mediaFile,
+            contentType,
+            replyTo?._id,
+            authState.token,
         )
 
         if (response.success) {
           // Replace optimistic message with actual message
           setMessages((prevMessages) =>
-            prevMessages.map((msg) =>
-              msg._id === messageData._id ? { ...response.message, isOptimistic: false, isUploading: false } : msg,
-            ),
+              prevMessages.map((msg) =>
+                  msg._id === messageData._id ? { ...response.message, isOptimistic: false, isUploading: false } : msg,
+              ),
           )
 
           // Send via socket
@@ -465,9 +468,9 @@ const ChatScreen = () => {
         } else {
           // Handle error
           setMessages((prevMessages) =>
-            prevMessages.map((msg) =>
-              msg._id === messageData._id ? { ...msg, failed: true, isUploading: false } : msg,
-            ),
+              prevMessages.map((msg) =>
+                  msg._id === messageData._id ? { ...msg, failed: true, isUploading: false } : msg,
+              ),
           )
         }
       }
@@ -475,7 +478,7 @@ const ChatScreen = () => {
       console.error("Error sending media:", error)
       // Handle error
       setMessages((prevMessages) =>
-        prevMessages.map((msg) => (msg.isOptimistic ? { ...msg, failed: true, isUploading: false } : msg)),
+          prevMessages.map((msg) => (msg.isOptimistic ? { ...msg, failed: true, isUploading: false } : msg)),
       )
     }
   }
@@ -497,12 +500,12 @@ const ChatScreen = () => {
 
           if (permissionRequest !== PermissionsAndroid.RESULTS.GRANTED) {
             Alert.alert(
-              "Permission Required",
-              "Camera permission is needed to take photos. Please enable it in app settings.",
-              [
-                { text: "Cancel", style: "cancel" },
-                { text: "Open Settings", onPress: () => openSettings() },
-              ],
+                "Permission Required",
+                "Camera permission is needed to take photos. Please enable it in app settings.",
+                [
+                  { text: "Cancel", style: "cancel" },
+                  { text: "Open Settings", onPress: () => openSettings() },
+                ],
             )
             return false
           }
@@ -519,12 +522,12 @@ const ChatScreen = () => {
         const result = await request(PERMISSIONS.IOS.CAMERA)
         if (result !== RESULTS.GRANTED) {
           Alert.alert(
-            "Permission Required",
-            "Camera permission is needed to take photos. Please enable it in app settings.",
-            [
-              { text: "Cancel", style: "cancel" },
-              { text: "Open Settings", onPress: () => openSettings() },
-            ],
+              "Permission Required",
+              "Camera permission is needed to take photos. Please enable it in app settings.",
+              [
+                { text: "Cancel", style: "cancel" },
+                { text: "Open Settings", onPress: () => openSettings() },
+              ],
           )
           return false
         }
@@ -548,16 +551,16 @@ const ChatScreen = () => {
             const videoRequest = await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.READ_MEDIA_VIDEO)
 
             if (
-              photoRequest !== PermissionsAndroid.RESULTS.GRANTED ||
-              videoRequest !== PermissionsAndroid.RESULTS.GRANTED
+                photoRequest !== PermissionsAndroid.RESULTS.GRANTED ||
+                videoRequest !== PermissionsAndroid.RESULTS.GRANTED
             ) {
               Alert.alert(
-                "Permission Required",
-                "Storage permission is needed to access media. Please enable it in app settings.",
-                [
-                  { text: "Cancel", style: "cancel" },
-                  { text: "Open Settings", onPress: () => openSettings() },
-                ],
+                  "Permission Required",
+                  "Storage permission is needed to access media. Please enable it in app settings.",
+                  [
+                    { text: "Cancel", style: "cancel" },
+                    { text: "Open Settings", onPress: () => openSettings() },
+                  ],
               )
               return false
             }
@@ -571,24 +574,24 @@ const ChatScreen = () => {
 
           if (!granted) {
             const permissionRequest = await PermissionsAndroid.request(
-              PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE,
-              {
-                title: "Storage Permission",
-                message: "CallNow needs access to your storage to select photos and documents.",
-                buttonNeutral: "Ask Me Later",
-                buttonNegative: "Cancel",
-                buttonPositive: "OK",
-              },
+                PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE,
+                {
+                  title: "Storage Permission",
+                  message: "CallNow needs access to your storage to select photos and documents.",
+                  buttonNeutral: "Ask Me Later",
+                  buttonNegative: "Cancel",
+                  buttonPositive: "OK",
+                },
             )
 
             if (permissionRequest !== PermissionsAndroid.RESULTS.GRANTED) {
               Alert.alert(
-                "Permission Required",
-                "Storage permission is needed to access media. Please enable it in app settings.",
-                [
-                  { text: "Cancel", style: "cancel" },
-                  { text: "Open Settings", onPress: () => openSettings() },
-                ],
+                  "Permission Required",
+                  "Storage permission is needed to access media. Please enable it in app settings.",
+                  [
+                    { text: "Cancel", style: "cancel" },
+                    { text: "Open Settings", onPress: () => openSettings() },
+                  ],
               )
               return false
             }
@@ -606,12 +609,12 @@ const ChatScreen = () => {
         const result = await request(PERMISSIONS.IOS.PHOTO_LIBRARY)
         if (result !== RESULTS.GRANTED) {
           Alert.alert(
-            "Permission Required",
-            "Photo library permission is needed to select images. Please enable it in app settings.",
-            [
-              { text: "Cancel", style: "cancel" },
-              { text: "Open Settings", onPress: () => openSettings() },
-            ],
+              "Permission Required",
+              "Photo library permission is needed to select images. Please enable it in app settings.",
+              [
+                { text: "Cancel", style: "cancel" },
+                { text: "Open Settings", onPress: () => openSettings() },
+              ],
           )
           return false
         }
@@ -638,12 +641,12 @@ const ChatScreen = () => {
 
           if (permissionRequest !== PermissionsAndroid.RESULTS.GRANTED) {
             Alert.alert(
-              "Permission Required",
-              "Microphone permission is needed to record audio. Please enable it in app settings.",
-              [
-                { text: "Cancel", style: "cancel" },
-                { text: "Open Settings", onPress: () => openSettings() },
-              ],
+                "Permission Required",
+                "Microphone permission is needed to record audio. Please enable it in app settings.",
+                [
+                  { text: "Cancel", style: "cancel" },
+                  { text: "Open Settings", onPress: () => openSettings() },
+                ],
             )
             return false
           }
@@ -660,12 +663,12 @@ const ChatScreen = () => {
         const result = await request(PERMISSIONS.IOS.MICROPHONE)
         if (result !== RESULTS.GRANTED) {
           Alert.alert(
-            "Permission Required",
-            "Microphone permission is needed to record audio. Please enable it in app settings.",
-            [
-              { text: "Cancel", style: "cancel" },
-              { text: "Open Settings", onPress: () => openSettings() },
-            ],
+              "Permission Required",
+              "Microphone permission is needed to record audio. Please enable it in app settings.",
+              [
+                { text: "Cancel", style: "cancel" },
+                { text: "Open Settings", onPress: () => openSettings() },
+              ],
           )
           return false
         }
@@ -825,15 +828,20 @@ const ChatScreen = () => {
 
   // Handle typing indicator
   const handleTyping = () => {
+    // Clear any existing timeout
     if (typingTimeoutRef.current) {
       clearTimeout(typingTimeoutRef.current)
     }
 
+    // Always emit typing event when user types
+    setTyping(conversation._id, authState.user.id)
+
+    // Update local state if needed
     if (!isTyping) {
       setIsTyping(true)
-      setTyping(conversation._id, authState.user.id)
     }
 
+    // Set timeout to stop typing after 3 seconds of inactivity
     typingTimeoutRef.current = setTimeout(() => {
       setIsTyping(false)
       setStopTyping(conversation._id, authState.user.id)
@@ -922,9 +930,9 @@ const ChatScreen = () => {
   const handleCopySelected = () => {
     if (selectedMessages.length >= 1) {
       const selectedTexts = messages
-        .filter((msg) => selectedMessages.includes(msg._id) && msg.contentType === "text")
-        .map((msg) => msg.content)
-        .join("\n\n")
+          .filter((msg) => selectedMessages.includes(msg._id) && msg.contentType === "text")
+          .map((msg) => msg.content)
+          .join("\n\n")
 
       if (selectedTexts) {
         Clipboard.setString(selectedTexts)
@@ -939,35 +947,35 @@ const ChatScreen = () => {
   const handleDeleteSelected = () => {
     if (selectedMessages.length >= 1) {
       Alert.alert(
-        "Delete Messages",
-        `Are you sure you want to delete ${selectedMessages.length} message(s)?`,
-        [
-          {
-            text: "Cancel",
-            style: "cancel",
-          },
-          {
-            text: "Delete for Me",
-            onPress: () => {
-              selectedMessages.forEach((messageId) => {
-                handleDeleteMessage(messageId, false)
-              })
-              exitSelectionMode()
+          "Delete Messages",
+          `Are you sure you want to delete ${selectedMessages.length} message(s)?`,
+          [
+            {
+              text: "Cancel",
+              style: "cancel",
             },
-            style: "destructive",
-          },
-          {
-            text: "Delete for Everyone",
-            onPress: () => {
-              selectedMessages.forEach((messageId) => {
-                handleDeleteMessage(messageId, true)
-              })
-              exitSelectionMode()
+            {
+              text: "Delete for Me",
+              onPress: () => {
+                selectedMessages.forEach((messageId) => {
+                  handleDeleteMessage(messageId, false)
+                })
+                exitSelectionMode()
+              },
+              style: "destructive",
             },
-            style: "destructive",
-          },
-        ],
-        { cancelable: true },
+            {
+              text: "Delete for Everyone",
+              onPress: () => {
+                selectedMessages.forEach((messageId) => {
+                  handleDeleteMessage(messageId, true)
+                })
+                exitSelectionMode()
+              },
+              style: "destructive",
+            },
+          ],
+          { cancelable: true },
       )
     }
   }
@@ -978,15 +986,15 @@ const ChatScreen = () => {
       if (selectedMessage) {
         // Show message info (timestamp, read status, etc.)
         Alert.alert(
-          "Message Info",
-          `Sent: ${new Date(selectedMessage.createdAt).toLocaleString()}\n` +
-          `Status: ${
-            selectedMessage.readBy?.length > 0
-              ? "Read"
-              : selectedMessage.deliveredTo?.length > 0
-                ? "Delivered"
-                : "Sent"
-          }`,
+            "Message Info",
+            `Sent: ${new Date(selectedMessage.createdAt).toLocaleString()}\n` +
+            `Status: ${
+                selectedMessage.readBy?.length > 0
+                    ? "Read"
+                    : selectedMessage.deliveredTo?.length > 0
+                        ? "Delivered"
+                        : "Sent"
+            }`,
         )
       }
       exitSelectionMode()
@@ -1001,7 +1009,7 @@ const ChatScreen = () => {
 
       // Check if any of the selected messages have files that can be shared
       const fileMessages = messagesToShare.filter(
-        (msg) => ["document", "image", "video", "audio"].includes(msg.contentType) && msg.mediaUrl,
+          (msg) => ["document", "image", "video", "audio"].includes(msg.contentType) && msg.mediaUrl,
       )
 
       if (fileMessages.length > 0) {
@@ -1011,130 +1019,130 @@ const ChatScreen = () => {
 
         // Get the file path if it exists locally
         const safeFileName =
-          fileToShare.mediaName?.replace(/[^a-zA-Z0-9.-]/g, "_") || `${fileToShare.contentType}_${Date.now()}`
+            fileToShare.mediaName?.replace(/[^a-zA-Z0-9.-]/g, "_") || `${fileToShare.contentType}_${Date.now()}`
         const appFilesDir = `${RNFS.DocumentDirectoryPath}/CallNowFiles`
         const filePath = `${appFilesDir}/${safeFileName}`
 
         // Check if file exists locally
         RNFS.exists(filePath)
-          .then((exists) => {
-            if (exists) {
-              console.log("File exists locally, sharing from local path")
-              // Get file extension to determine MIME type
-              const fileExt = safeFileName.split(".").pop().toLowerCase()
-              let mimeType = "*/*"
+            .then((exists) => {
+              if (exists) {
+                console.log("File exists locally, sharing from local path")
+                // Get file extension to determine MIME type
+                const fileExt = safeFileName.split(".").pop().toLowerCase()
+                let mimeType = "*/*"
 
-              // Set common MIME types
-              if (["jpg", "jpeg", "png", "gif"].includes(fileExt)) {
-                mimeType = "image/*"
-              } else if (["mp4", "mov", "3gp"].includes(fileExt)) {
-                mimeType = "video/*"
-              } else if (["pdf"].includes(fileExt)) {
-                mimeType = "application/pdf"
-              } else if (["doc", "docx"].includes(fileExt)) {
-                mimeType = "application/msword"
-              } else if (["xls", "xlsx"].includes(fileExt)) {
-                mimeType = "application/vnd.ms-excel"
-              } else if (["mp3", "wav", "ogg"].includes(fileExt)) {
-                mimeType = "audio/*"
-              }
+                // Set common MIME types
+                if (["jpg", "jpeg", "png", "gif"].includes(fileExt)) {
+                  mimeType = "image/*"
+                } else if (["mp4", "mov", "3gp"].includes(fileExt)) {
+                  mimeType = "video/*"
+                } else if (["pdf"].includes(fileExt)) {
+                  mimeType = "application/pdf"
+                } else if (["doc", "docx"].includes(fileExt)) {
+                  mimeType = "application/msword"
+                } else if (["xls", "xlsx"].includes(fileExt)) {
+                  mimeType = "application/vnd.ms-excel"
+                } else if (["mp3", "wav", "ogg"].includes(fileExt)) {
+                  mimeType = "audio/*"
+                }
 
-              // Share the file
-              Share.open({
-                url: `file://${filePath}`,
-                type: mimeType,
-                failOnCancel: false,
-                title: "Share file",
-                subject: safeFileName,
-              }).catch((error) => {
-                console.log("Error sharing file:", error)
-                Alert.alert("Error", "Could not share the file.")
-              })
-            } else {
-              console.log("File does not exist locally, downloading first")
-              // Download the file first, then share it
-              const mediaUrl = `${API_BASE_URL_FOR_MEDIA}/${fileToShare.mediaUrl}`
+                // Share the file
+                Share.open({
+                  url: `file://${filePath}`,
+                  type: mimeType,
+                  failOnCancel: false,
+                  title: "Share file",
+                  subject: safeFileName,
+                }).catch((error) => {
+                  console.log("Error sharing file:", error)
+                  Alert.alert("Error", "Could not share the file.")
+                })
+              } else {
+                console.log("File does not exist locally, downloading first")
+                // Download the file first, then share it
+                const mediaUrl = `${API_BASE_URL_FOR_MEDIA}/${fileToShare.mediaUrl}`
 
-              Alert.alert(
-                "Download Required",
-                "The file needs to be downloaded before sharing. Download now?",
-                [
-                  {
-                    text: "Cancel",
-                    style: "cancel",
-                  },
-                  {
-                    text: "Download & Share",
-                    onPress: () => {
-                      // Create directory if it doesn't exist
-                      RNFS.mkdir(appFilesDir)
-                        .then(() => {
-                          // Download the file
-                          RNFS.downloadFile({
-                            fromUrl: mediaUrl,
-                            toFile: filePath,
-                          })
-                            .promise.then((result) => {
-                            if (result.statusCode === 200) {
-                              // Share the downloaded file
-                              const fileExt = safeFileName.split(".").pop().toLowerCase()
-                              let mimeType = "*/*"
+                Alert.alert(
+                    "Download Required",
+                    "The file needs to be downloaded before sharing. Download now?",
+                    [
+                      {
+                        text: "Cancel",
+                        style: "cancel",
+                      },
+                      {
+                        text: "Download & Share",
+                        onPress: () => {
+                          // Create directory if it doesn't exist
+                          RNFS.mkdir(appFilesDir)
+                              .then(() => {
+                                // Download the file
+                                RNFS.downloadFile({
+                                  fromUrl: mediaUrl,
+                                  toFile: filePath,
+                                })
+                                    .promise.then((result) => {
+                                  if (result.statusCode === 200) {
+                                    // Share the downloaded file
+                                    const fileExt = safeFileName.split(".").pop().toLowerCase()
+                                    let mimeType = "*/*"
 
-                              // Set MIME type based on extension
-                              if (["jpg", "jpeg", "png", "gif"].includes(fileExt)) {
-                                mimeType = "image/*"
-                              } else if (["mp4", "mov", "3gp"].includes(fileExt)) {
-                                mimeType = "video/*"
-                              } else if (["pdf"].includes(fileExt)) {
-                                mimeType = "application/pdf"
-                              } else if (["doc", "docx"].includes(fileExt)) {
-                                mimeType = "application/msword"
-                              } else if (["xls", "xlsx"].includes(fileExt)) {
-                                mimeType = "application/vnd.ms-excel"
-                              } else if (["mp3", "wav", "ogg"].includes(fileExt)) {
-                                mimeType = "audio/*"
-                              }
+                                    // Set MIME type based on extension
+                                    if (["jpg", "jpeg", "png", "gif"].includes(fileExt)) {
+                                      mimeType = "image/*"
+                                    } else if (["mp4", "mov", "3gp"].includes(fileExt)) {
+                                      mimeType = "video/*"
+                                    } else if (["pdf"].includes(fileExt)) {
+                                      mimeType = "application/pdf"
+                                    } else if (["doc", "docx"].includes(fileExt)) {
+                                      mimeType = "application/msword"
+                                    } else if (["xls", "xlsx"].includes(fileExt)) {
+                                      mimeType = "application/vnd.ms-excel"
+                                    } else if (["mp3", "wav", "ogg"].includes(fileExt)) {
+                                      mimeType = "audio/*"
+                                    }
 
-                              Share.open({
-                                url: `file://${filePath}`,
-                                type: mimeType,
-                                failOnCancel: false,
-                                title: "Share file",
-                                subject: safeFileName,
-                              }).catch((error) => {
-                                console.log("Error sharing file:", error)
-                                Alert.alert("Error", "Could not share the file.")
+                                    Share.open({
+                                      url: `file://${filePath}`,
+                                      type: mimeType,
+                                      failOnCancel: false,
+                                      title: "Share file",
+                                      subject: safeFileName,
+                                    }).catch((error) => {
+                                      console.log("Error sharing file:", error)
+                                      Alert.alert("Error", "Could not share the file.")
+                                    })
+                                  } else {
+                                    Alert.alert("Error", "Failed to download the file for sharing.")
+                                  }
+                                })
+                                    .catch((error) => {
+                                      console.log("Error downloading file for sharing:", error)
+                                      Alert.alert("Error", "Failed to download the file for sharing.")
+                                    })
                               })
-                            } else {
-                              Alert.alert("Error", "Failed to download the file for sharing.")
-                            }
-                          })
-                            .catch((error) => {
-                              console.log("Error downloading file for sharing:", error)
-                              Alert.alert("Error", "Failed to download the file for sharing.")
-                            })
-                        })
-                        .catch((error) => {
-                          console.log("Error creating directory:", error)
-                          Alert.alert("Error", "Could not create directory for file download.")
-                        })
-                    },
-                  },
-                ],
-                { cancelable: true },
-              )
-            }
-          })
-          .catch((error) => {
-            console.log("Error checking if file exists:", error)
-            Alert.alert("Error", "Could not check if file exists.")
-          })
+                              .catch((error) => {
+                                console.log("Error creating directory:", error)
+                                Alert.alert("Error", "Could not create directory for file download.")
+                              })
+                        },
+                      },
+                    ],
+                    { cancelable: true },
+                )
+              }
+            })
+            .catch((error) => {
+              console.log("Error checking if file exists:", error)
+              Alert.alert("Error", "Could not check if file exists.")
+            })
       } else {
         // If no file messages, share text content
         const textToShare = messagesToShare
-          .filter((msg) => msg.contentType === "text")
-          .map((msg) => msg.content)
-          .join("\n\n")
+            .filter((msg) => msg.contentType === "text")
+            .map((msg) => msg.content)
+            .join("\n\n")
 
         if (textToShare) {
           Share.open({
@@ -1165,64 +1173,64 @@ const ChatScreen = () => {
         // Single selection mode - no title
         navigation.setOptions({
           headerLeft: () => (
-            <TouchableOpacity style={styles.headerButton} onPress={exitSelectionMode}>
-              <Ionicons name="arrow-back" size={24} color="#ffffff" />
-            </TouchableOpacity>
+              <TouchableOpacity style={styles.headerButton} onPress={exitSelectionMode}>
+                <Ionicons name="arrow-back" size={24} color="#ffffff" />
+              </TouchableOpacity>
           ),
           headerTitle: () => null, // No title for single selection
           headerRight: () => (
-            <View style={styles.headerRight}>
-              <TouchableOpacity style={styles.headerButton} onPress={handleReplySelected}>
-                <Ionicons name="arrow-undo" size={24} color="#ffffff" />
-              </TouchableOpacity>
+              <View style={styles.headerRight}>
+                <TouchableOpacity style={styles.headerButton} onPress={handleReplySelected}>
+                  <Ionicons name="arrow-undo" size={24} color="#ffffff" />
+                </TouchableOpacity>
 
-              <TouchableOpacity style={styles.headerButton} onPress={handleInfoSelected}>
-                <Ionicons name="information-circle" size={24} color="#ffffff" />
-              </TouchableOpacity>
+                <TouchableOpacity style={styles.headerButton} onPress={handleInfoSelected}>
+                  <Ionicons name="information-circle" size={24} color="#ffffff" />
+                </TouchableOpacity>
 
-              <TouchableOpacity style={styles.headerButton} onPress={handleShareSelected}>
-                <Ionicons name="share-social" size={24} color="#ffffff" />
-              </TouchableOpacity>
+                <TouchableOpacity style={styles.headerButton} onPress={handleShareSelected}>
+                  <Ionicons name="share-social" size={24} color="#ffffff" />
+                </TouchableOpacity>
 
-              <TouchableOpacity style={styles.headerButton} onPress={handleCopySelected}>
-                <Ionicons name="copy" size={24} color="#ffffff" />
-              </TouchableOpacity>
+                <TouchableOpacity style={styles.headerButton} onPress={handleCopySelected}>
+                  <Ionicons name="copy" size={24} color="#ffffff" />
+                </TouchableOpacity>
 
-              <TouchableOpacity style={styles.headerButton} onPress={handleDeleteSelected}>
-                <Ionicons name="trash" size={24} color="#ffffff" />
-              </TouchableOpacity>
-            </View>
+                <TouchableOpacity style={styles.headerButton} onPress={handleDeleteSelected}>
+                  <Ionicons name="trash" size={24} color="#ffffff" />
+                </TouchableOpacity>
+              </View>
           ),
         })
       } else {
         // Multiple selection mode
         navigation.setOptions({
           headerLeft: () => (
-            <TouchableOpacity style={styles.headerButton} onPress={exitSelectionMode}>
-              <Ionicons name="arrow-back" size={24} color={currentTheme.primary} />
-            </TouchableOpacity>
+              <TouchableOpacity style={styles.headerButton} onPress={exitSelectionMode}>
+                <Ionicons name="arrow-back" size={24} color={currentTheme.primary} />
+              </TouchableOpacity>
           ),
           headerTitle: () => (
-            <Text style={[styles.headerName, { color: currentTheme.text }]}>{selectedMessages.length} selected</Text>
+              <Text style={[styles.headerName, { color: currentTheme.text }]}>{selectedMessages.length} selected</Text>
           ),
           headerRight: () => (
-            <View style={styles.headerRight}>
-              <TouchableOpacity style={styles.headerButton} onPress={handleInfoSelected}>
-                <Ionicons name="information-circle" size={24} color={currentTheme.primary} />
-              </TouchableOpacity>
+              <View style={styles.headerRight}>
+                <TouchableOpacity style={styles.headerButton} onPress={handleInfoSelected}>
+                  <Ionicons name="information-circle" size={24} color={currentTheme.primary} />
+                </TouchableOpacity>
 
-              <TouchableOpacity style={styles.headerButton} onPress={handleShareSelected}>
-                <Ionicons name="share-social" size={24} color={currentTheme.primary} />
-              </TouchableOpacity>
+                <TouchableOpacity style={styles.headerButton} onPress={handleShareSelected}>
+                  <Ionicons name="share-social" size={24} color={currentTheme.primary} />
+                </TouchableOpacity>
 
-              <TouchableOpacity style={styles.headerButton} onPress={handleCopySelected}>
-                <Ionicons name="copy" size={24} color={currentTheme.primary} />
-              </TouchableOpacity>
+                <TouchableOpacity style={styles.headerButton} onPress={handleCopySelected}>
+                  <Ionicons name="copy" size={24} color={currentTheme.primary} />
+                </TouchableOpacity>
 
-              <TouchableOpacity style={styles.headerButton} onPress={handleDeleteSelected}>
-                <Ionicons name="trash" size={24} color={currentTheme.primary} />
-              </TouchableOpacity>
-            </View>
+                <TouchableOpacity style={styles.headerButton} onPress={handleDeleteSelected}>
+                  <Ionicons name="trash" size={24} color={currentTheme.primary} />
+                </TouchableOpacity>
+              </View>
           ),
         })
       }
@@ -1230,79 +1238,124 @@ const ChatScreen = () => {
       // Regular header (unchanged)
       navigation.setOptions({
         headerTitle: () => (
-          <TouchableOpacity
-            style={styles.headerTitle}
-            onPress={() => {
-              if (!conversationDetails.isGroup) {
-                navigation.navigate("UserProfile", {
-                  userId: conversationDetails.participants[0]._id,
-                  userName: conversationDetails.name,
-                  userImage: conversationDetails.image,
-                })
-              } else {
-                // Replace this Alert with navigation to GroupDetailsScreen
-                navigation.navigate("GroupDetails", { conversation: conversation });
-              }
-            }}
-          >
-            <Image
-              source={
-                conversationDetails.image
-                  ? { uri: `${API_BASE_URL_FOR_MEDIA}${conversationDetails.image}` }
-                  : require("../../assets/images/default-avatar.png")
-              }
-              style={styles.headerAvatar}
-            />
-            <View>
-              <Text style={[styles.headerName, { color: currentTheme.text }]}>{conversationDetails.name}</Text>
-              {isTyping && typingUsers.length > 0 && (
-                <Text style={[styles.typingText, { color: currentTheme.primary }]}>typing...</Text>
-              )}
-            </View>
-          </TouchableOpacity>
+            <TouchableOpacity
+                style={styles.headerTitle}
+                onPress={() => {
+                  if (!conversationDetails.isGroup) {
+                    navigation.navigate("UserProfile", {
+                      userId: conversationDetails.participants[0]._id,
+                      userName: conversationDetails.name,
+                      userImage: conversationDetails.image,
+                    })
+                  } else {
+                    // Replace this Alert with navigation to GroupDetailsScreen
+                    navigation.navigate("GroupDetails", { conversation: conversation })
+                  }
+                }}
+            >
+              <View style={styles.headerAvatarContainer}>
+                <Image
+                    source={
+                      conversationDetails.image
+                          ? { uri: `${API_BASE_URL_FOR_MEDIA}${conversationDetails.image}` }
+                          : require("../../assets/images/default-avatar.png")
+                    }
+                    style={styles.headerAvatar}
+                />
+                {!conversationDetails.isGroup && isOtherUserOnline && (
+                    <View style={styles.headerOnlineIndicator} />
+                )}
+              </View>
+              <View>
+                <Text style={[styles.headerName, { color: currentTheme.text }]}>{conversationDetails.name}</Text>
+                {typingUsers.length > 0 && (
+                    <Text style={[styles.typingText, { color: "#ffffff" }]}>
+                      {typingUsers.length === 1
+                          ? `${typingUsers[0].name} is typing...`
+                          : typingUsers.length === 2
+                              ? `${typingUsers[0].name} and ${typingUsers[1].name} are typing...`
+                              : `${typingUsers.length} people are typing...`}
+                    </Text>
+                )}
+              </View>
+            </TouchableOpacity>
         ),
         headerRight: () => (
-          <View style={styles.headerRight}>
-            {conversationDetails.isGroup ? (
-              <TouchableOpacity style={styles.headerButton}>
-                <Ionicons name="people" size={24} color={currentTheme.primary} />
-              </TouchableOpacity>
-            ) : (
-              <TouchableOpacity
-                style={styles.headerButton}
-                onPress={() =>
-                  navigation.navigate("Call", {
-                    recipient: conversationDetails.participants[0],
-                    isVideo: false,
-                  })
-                }
-              >
-                <Ionicons name="call" size={24} color={currentTheme.primary} />
-              </TouchableOpacity>
-            )}
-            {conversationDetails.isGroup ? (
-              <TouchableOpacity style={styles.headerButton}>
-                <Ionicons name="videocam" size={24} color={currentTheme.primary} />
-              </TouchableOpacity>
-            ) : (
-              <TouchableOpacity
-                style={styles.headerButton}
-                onPress={() =>
-                  navigation.navigate("Call", {
-                    recipient: conversationDetails.participants[0],
-                    isVideo: true,
-                  })
-                }
-              >
-                <Ionicons name="videocam" size={24} color={currentTheme.primary} />
-              </TouchableOpacity>
-            )}
-          </View>
+            <View style={styles.headerRight}>
+              {!conversationDetails.isGroup && (
+                  <>
+                    <TouchableOpacity
+                        style={styles.callButton}
+                        onPress={() =>
+                          navigation.navigate("Call", {
+                            receiverId: conversationDetails.participants[0]._id,
+                            receiverName: conversationDetails.participants[0].name,
+                            receiverProfilePic: conversationDetails.participants[0].profilePicture,
+                            callType: "audio",
+                          })
+                        }
+                    >
+                      <Ionicons name="call" size={24} color={currentTheme.primary} />
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                        style={styles.callButton}
+                        onPress={() =>
+                          navigation.navigate("Call", {
+                            receiverId: conversationDetails.participants[0]._id,
+                            receiverName: conversationDetails.participants[0].name,
+                            receiverProfilePic: conversationDetails.participants[0].profilePicture,
+                            callType: "video",
+                          })
+                        }
+                    >
+                      <Ionicons name="videocam" size={24} color={currentTheme.primary} />
+                    </TouchableOpacity>
+                  </>
+              )}
+              {conversationDetails.isGroup && (
+                  <TouchableOpacity style={styles.callButton}>
+                    <Ionicons name="people" size={24} color={currentTheme.primary} />
+                  </TouchableOpacity>
+              )}
+            </View>
         ),
         headerLeft: undefined, // Reset headerLeft if it was set
       })
     }
-  }, [isSelectionMode, selectedMessages, navigation, conversationDetails, currentTheme, isTyping, typingUsers])
+  }, [isSelectionMode, selectedMessages, navigation, conversationDetails, currentTheme, isTyping, typingUsers, isOtherUserOnline])
+
+  // Add online status tracking for one-on-one conversations
+  useEffect(() => {
+    if (socket && isConnected && !conversation.isGroup) {
+      const otherParticipant = conversation.participants.find((p) => p._id !== authState.user.id);
+
+      if (otherParticipant) {
+        // Request initial status
+        socket.emit("get-user-status", { userId: otherParticipant._id });
+
+        // Listen for status updates
+        const handleStatusChange = ({ userId, status }) => {
+          if (userId === otherParticipant._id) {
+            setIsOtherUserOnline(status === "online");
+          }
+        };
+
+        const handleUserStatus = ({ userId, status }) => {
+          if (userId === otherParticipant._id) {
+            setIsOtherUserOnline(status === "online");
+          }
+        };
+
+        socket.on("user-status-change", handleStatusChange);
+        socket.on("user-status", handleUserStatus);
+
+        return () => {
+          socket.off("user-status-change", handleStatusChange);
+          socket.off("user-status", handleUserStatus);
+        };
+      }
+    }
+  }, [socket, isConnected, conversation.isGroup, conversation.participants, authState.user.id]);
 
   const loadWallpaper = async () => {
     try {
@@ -1519,156 +1572,156 @@ const ChatScreen = () => {
   // Render loading state
   if (isLoading) {
     return (
-      <View style={[styles.loadingContainer, { backgroundColor: currentTheme.background }]}>
-        <ActivityIndicator size="large" color={currentTheme.primary} />
-      </View>
+        <View style={[styles.loadingContainer, { backgroundColor: currentTheme.background }]}>
+          <ActivityIndicator size="large" color={currentTheme.primary} />
+        </View>
     )
   }
 
   return (
-    <SafeAreaView style={[styles.safeArea, { backgroundColor: currentTheme.background }]}>
-      <ImageBackground source={wallpaper} style={styles.container} resizeMode="cover">
-        <KeyboardAvoidingView
-          behavior={Platform.OS === "ios" ? "padding" : undefined}
-          style={styles.container}
-          keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 0}
-          enabled={Platform.OS === "ios"}
-        >
-          {/* Messages List */}
-          <FlatList
-            ref={flatListRef}
-            data={messages}
-            renderItem={({ item }) => (
-              <MessageItem
-                message={item}
-                isOwnMessage={item.sender._id === authState.user.id}
-                onDelete={handleDeleteMessage}
-                onReply={handleReply}
-                theme={currentTheme}
-                isSelected={selectedMessages.includes(item._id)}
-                onLongPress={handleMessageLongPress}
-                onPress={(message) => {
-                  // If in selection mode, toggle selection on tap
-                  if (isSelectionMode) {
-                    handleMessageLongPress(message)
-                  }
-                }}
-              />
-            )}
-            keyExtractor={(item) => item._id}
-            inverted
-            onEndReached={handleLoadMore}
-            onEndReachedThreshold={0.5}
-            ListFooterComponent={
-              isLoadingMore ? (
-                <View style={styles.loadingMore}>
-                  <ActivityIndicator size="small" color={currentTheme.primary} />
-                </View>
-              ) : null
-            }
-            contentContainerStyle={[
-              styles.messagesList,
-              { paddingBottom: keyboardVisible && Platform.OS === "android" ? keyboardHeight : 10 },
-            ]}
-          />
-
-          {/* Reply Preview */}
-          {replyTo && (
-            <View
-              style={[
-                styles.replyContainer,
-                { backgroundColor: currentTheme.card, borderTopColor: currentTheme.border },
-              ]}
-            >
-              <View
-                style={[
-                  styles.replyContent,
-                  { backgroundColor: currentTheme.background, borderLeftColor: currentTheme.primary },
+      <SafeAreaView style={[styles.safeArea, { backgroundColor: currentTheme.background }]}>
+        <ImageBackground source={wallpaper} style={styles.container} resizeMode="cover">
+          <KeyboardAvoidingView
+              behavior={Platform.OS === "ios" ? "padding" : undefined}
+              style={styles.container}
+              keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 0}
+              enabled={Platform.OS === "ios"}
+          >
+            {/* Messages List */}
+            <FlatList
+                ref={flatListRef}
+                data={messages}
+                renderItem={({ item }) => (
+                    <MessageItem
+                        message={item}
+                        isOwnMessage={item.sender._id === authState.user.id}
+                        onDelete={handleDeleteMessage}
+                        onReply={handleReply}
+                        theme={currentTheme}
+                        isSelected={selectedMessages.includes(item._id)}
+                        onLongPress={handleMessageLongPress}
+                        onPress={(message) => {
+                          // If in selection mode, toggle selection on tap
+                          if (isSelectionMode) {
+                            handleMessageLongPress(message)
+                          }
+                        }}
+                    />
+                )}
+                keyExtractor={(item) => item._id}
+                inverted
+                onEndReached={handleLoadMore}
+                onEndReachedThreshold={0.5}
+                ListFooterComponent={
+                  isLoadingMore ? (
+                      <View style={styles.loadingMore}>
+                        <ActivityIndicator size="small" color={currentTheme.primary} />
+                      </View>
+                  ) : null
+                }
+                contentContainerStyle={[
+                  styles.messagesList,
+                  { paddingBottom: keyboardVisible && Platform.OS === "android" ? keyboardHeight : 10 },
                 ]}
-              >
-                <View style={styles.replyInfo}>
-                  <Text style={[styles.replyName, { color: currentTheme.primary }]}>
-                    {replyTo.sender._id === authState.user.id ? "You" : replyTo.sender.name}
-                  </Text>
-                  <Text style={[styles.replyText, { color: currentTheme.placeholder }]} numberOfLines={1}>
-                    {replyTo.contentType === "text"
-                      ? replyTo.content
-                      : `${replyTo.contentType.charAt(0).toUpperCase() + replyTo.contentType.slice(1)}`}
-                  </Text>
-                </View>
-                <TouchableOpacity onPress={handleCancelReply}>
-                  <Ionicons name="close" size={20} color={currentTheme.placeholder} />
-                </TouchableOpacity>
-              </View>
-            </View>
-          )}
-
-          {/* Audio Recording View (WhatsApp style) */}
-          {isRecording && (
-            <AudioRecordingView
-              duration={recordingDuration}
-              onCancel={cancelAudioRecording}
-              onSend={() => handleAudioRecording()}
-              theme={currentTheme}
             />
-          )}
 
-          {/* Message Input (hidden when recording) */}
-          {!isRecording && !isSelectionMode && (
-            <View
-              style={[
-                styles.inputContainer,
-                {
-                  backgroundColor: currentTheme.card,
-                  borderTopColor: currentTheme.border,
-                  paddingBottom: Platform.OS === "ios" ? (keyboardVisible ? 5 : 25) : 10,
-                },
-              ]}
-            >
-              <TouchableOpacity style={styles.attachButton} onPress={() => setIsAttachmentModalVisible(true)}>
-                <Ionicons name="add-circle" size={24} color={currentTheme.primary} />
-              </TouchableOpacity>
-
-              <TextInput
-                ref={inputRef}
-                style={[styles.input, { backgroundColor: currentTheme.background, color: currentTheme.text }]}
-                placeholder="Type a message..."
-                placeholderTextColor={currentTheme.placeholder}
-                value={inputMessage}
-                onChangeText={(text) => {
-                  setInputMessage(text)
-                  handleTyping()
-                }}
-                multiline
-              />
-
-              {inputMessage.trim() ? (
-                <TouchableOpacity
-                  style={[styles.sendButton, { backgroundColor: currentTheme.primary }]}
-                  onPress={handleSendMessage}
+            {/* Reply Preview */}
+            {replyTo && (
+                <View
+                    style={[
+                      styles.replyContainer,
+                      { backgroundColor: currentTheme.card, borderTopColor: currentTheme.border },
+                    ]}
                 >
-                  <Ionicons name="send" size={24} color="#FFFFFF" />
-                </TouchableOpacity>
-              ) : (
-                <TouchableOpacity style={styles.micButton} onPress={handleAudioRecording}>
-                  <Ionicons name="mic" size={24} color={currentTheme.primary} />
-                </TouchableOpacity>
-              )}
-            </View>
-          )}
+                  <View
+                      style={[
+                        styles.replyContent,
+                        { backgroundColor: currentTheme.background, borderLeftColor: currentTheme.primary },
+                      ]}
+                  >
+                    <View style={styles.replyInfo}>
+                      <Text style={[styles.replyName, { color: currentTheme.primary }]}>
+                        {replyTo.sender._id === authState.user.id ? "You" : replyTo.sender.name}
+                      </Text>
+                      <Text style={[styles.replyText, { color: currentTheme.placeholder }]} numberOfLines={1}>
+                        {replyTo.contentType === "text"
+                            ? replyTo.content
+                            : `${replyTo.contentType.charAt(0).toUpperCase() + replyTo.contentType.slice(1)}`}
+                      </Text>
+                    </View>
+                    <TouchableOpacity onPress={handleCancelReply}>
+                      <Ionicons name="close" size={20} color={currentTheme.placeholder} />
+                    </TouchableOpacity>
+                  </View>
+                </View>
+            )}
 
-          {/* Attachment Modal */}
-          <AttachmentModal
-            visible={isAttachmentModalVisible}
-            onClose={() => setIsAttachmentModalVisible(false)}
-            onPickImage={handlePickImage}
-            onTakePhoto={handleTakePhoto}
-            onPickDocument={handlePickDocument}
-            theme={currentTheme}
-          />
-        </KeyboardAvoidingView>
-      </ImageBackground>
-    </SafeAreaView>
+            {/* Audio Recording View (WhatsApp style) */}
+            {isRecording && (
+                <AudioRecordingView
+                    duration={recordingDuration}
+                    onCancel={cancelAudioRecording}
+                    onSend={() => handleAudioRecording()}
+                    theme={currentTheme}
+                />
+            )}
+
+            {/* Message Input (hidden when recording) */}
+            {!isRecording && !isSelectionMode && (
+                <View
+                    style={[
+                      styles.inputContainer,
+                      {
+                        backgroundColor: currentTheme.card,
+                        borderTopColor: currentTheme.border,
+                        paddingBottom: Platform.OS === "ios" ? (keyboardVisible ? 5 : 25) : 10,
+                      },
+                    ]}
+                >
+                  <TouchableOpacity style={styles.attachButton} onPress={() => setIsAttachmentModalVisible(true)}>
+                    <Ionicons name="add-circle" size={24} color={currentTheme.primary} />
+                  </TouchableOpacity>
+
+                  <TextInput
+                      ref={inputRef}
+                      style={[styles.input, { backgroundColor: currentTheme.background, color: currentTheme.text }]}
+                      placeholder="Type a message..."
+                      placeholderTextColor={currentTheme.placeholder}
+                      value={inputMessage}
+                      onChangeText={(text) => {
+                        setInputMessage(text)
+                        handleTyping()
+                      }}
+                      multiline
+                  />
+
+                  {inputMessage.trim() ? (
+                      <TouchableOpacity
+                          style={[styles.sendButton, { backgroundColor: currentTheme.primary }]}
+                          onPress={handleSendMessage}
+                      >
+                        <Ionicons name="send" size={24} color="#FFFFFF" />
+                      </TouchableOpacity>
+                  ) : (
+                      <TouchableOpacity style={styles.micButton} onPress={handleAudioRecording}>
+                        <Ionicons name="mic" size={24} color={currentTheme.primary} />
+                      </TouchableOpacity>
+                  )}
+                </View>
+            )}
+
+            {/* Attachment Modal */}
+            <AttachmentModal
+                visible={isAttachmentModalVisible}
+                onClose={() => setIsAttachmentModalVisible(false)}
+                onPickImage={handlePickImage}
+                onTakePhoto={handleTakePhoto}
+                onPickDocument={handlePickDocument}
+                theme={currentTheme}
+            />
+          </KeyboardAvoidingView>
+        </ImageBackground>
+      </SafeAreaView>
   )
 }
 
@@ -1777,6 +1830,29 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
   },
   replyText: {},
+  headerAvatarContainer: {
+    position: "relative",
+    marginRight: 10,
+  },
+  headerOnlineIndicator: {
+    position: "absolute",
+    bottom: 2,
+    right: 2,
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: "#4CAF50",
+    borderWidth: 2,
+    borderColor: "white",
+  },
+  callButton: {
+    marginLeft: 10,
+    padding: 8,
+    backgroundColor: "rgba(255, 255, 255, 0.2)",
+    borderRadius: 20,
+    justifyContent: "center",
+    alignItems: "center",
+  }
 })
 
 export default ChatScreen

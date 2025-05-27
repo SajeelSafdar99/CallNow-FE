@@ -79,69 +79,11 @@ const AppNavigator = () => {
             />
           </>
         ) : (
-          // Main app screens
           <>
             <Stack.Screen name="Main" component={MainTabNavigator} options={{ headerShown: false }} />
-            {/*<Stack.Screen*/}
-            {/*  name="Chat"*/}
-            {/*  component={ChatScreen}*/}
-            {/*  options={({ route, navigation }) => ({*/}
-            {/*    title: route.params?.conversation?.isGroup*/}
-            {/*      ? route.params?.conversation?.groupName*/}
-            {/*      : route.params?.contactUser?.name || "Chat",*/}
-            {/*    headerRight: () => (*/}
-            {/*      <TouchableOpacity*/}
-            {/*        style={{ marginRight: 15 }}*/}
-            {/*        onPress={() => {*/}
-            {/*          if (route.params?.conversation?.isGroup) {*/}
-            {/*            navigation.navigate("GroupInfo", {*/}
-            {/*              groupId: route.params.conversation._id,*/}
-            {/*            })*/}
-            {/*          } else {*/}
-            {/*            navigation.navigate("ContactDetails", {*/}
-            {/*              contact: { contactUser: route.params.contactUser },*/}
-            {/*            })*/}
-            {/*          }*/}
-            {/*        }}*/}
-            {/*      >*/}
-            {/*        <Ionicon name="ellipsis-vertical" size={24} color="#FFFFFF" />*/}
-            {/*      </TouchableOpacity>*/}
-            {/*    ),*/}
-            {/*  })}*/}
-            {/*/>*/}
-            {/*<Stack.Screen*/}
-            {/*  name="Contacts"*/}
-            {/*  component={ContactsScreen}*/}
-            {/*  options={({ route }) => ({*/}
-            {/*    title: route.params?.isNewChat ? "New Chat" : "Contacts",*/}
-            {/*  })}*/}
-            {/*/>*/}
-            {/*<Stack.Screen name="AddContact" component={AddContactScreen} options={{ title: "Add Contact" }} />*/}
-            {/*<Stack.Screen name="ContactDetails" component={ContactDetailsScreen} options={{ title: "Contact Info" }} />*/}
-            {/*<Stack.Screen*/}
-            {/*  name="Call"*/}
-            {/*  component={CallScreen}*/}
-            {/*  options={{*/}
-            {/*    headerShown: false,*/}
-            {/*    gestureEnabled: false,*/}
-            {/*  }}*/}
-            {/*/>*/}
-            {/*<Stack.Screen*/}
-            {/*  name="GroupCall"*/}
-            {/*  component={GroupCallScreen}*/}
-            {/*  options={{*/}
-            {/*    headerShown: false,*/}
-            {/*    gestureEnabled: false,*/}
-            {/*  }}*/}
-            {/*/>*/}
-            {/*<Stack.Screen name="Privacy" component={PrivacyScreen} options={{ title: "Privacy" }} />*/}
-            {/*<Stack.Screen name="Help" component={HelpScreen} options={{ title: "Help" }} />*/}
-            {/*<Stack.Screen name="About" component={AboutScreen} options={{ title: "About" }} />*/}
-            {/*<Stack.Screen name="Devices" component={DevicesScreen} options={{ title: "Linked Devices" }} />*/}
           </>
         )}
       </Stack.Navigator>
-    // </NavigationContainer>
   )
 }
 

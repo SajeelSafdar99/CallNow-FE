@@ -9,6 +9,7 @@ import ContactDetailScreen from '../screens/contacts/ContactDetailsScreen';
 import ContactsScreen from '../screens/contacts/ContactsScreen';
 import GroupDetailsScreen from '../screens/chat/GroupDetailsScreen';
 import UserDetailsScreen from '../screens/chat/UserDetailsScreen';
+import CallScreen from '../screens/calls/CallScreen';
 
 const Stack = createStackNavigator();
 
@@ -66,6 +67,14 @@ const ChatNavigator = () => {
         component={ContactDetailScreen}
         options={{
           title: "Contact Details",
+        }}
+      />
+      <Stack.Screen
+        name="Call"
+        component={CallScreen}
+        options={{
+          headerShown: false,
+          presentation: "fullScreenModal",
         }}
       />
     </Stack.Navigator>

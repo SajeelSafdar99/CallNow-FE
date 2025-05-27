@@ -19,7 +19,7 @@ import { ThemeContext } from "../../context/ThemeContext"
 import { getTheme } from "../../utils/theme"
 import * as ConversationsAPI from "../../api/conversations"
 import { formatDate } from "../../utils/formatters"
-import { API_BASE_URL } from "../../config/api" // Import API base URL
+import {API_BASE_URL, API_BASE_URL_FOR_MEDIA} from '../../config/api'; // Import API base URL
 
 const ChatsListScreen = () => {
   const navigation = useNavigation()
@@ -179,7 +179,7 @@ const ChatsListScreen = () => {
       >
         <View style={styles.avatarContainer}>
           {image ? (
-            <Image source={{ uri: `${API_BASE_URL}${image}` }} style={styles.avatar} />
+            <Image source={{ uri: `${API_BASE_URL_FOR_MEDIA}${image}` }} style={styles.avatar} />
           ) : (
             <View style={[styles.avatar, styles.defaultAvatar, { backgroundColor: currentTheme.primary }]}>
               <Text style={styles.avatarText}>{name.charAt(0).toUpperCase()}</Text>

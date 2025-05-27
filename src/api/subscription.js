@@ -66,11 +66,11 @@ export const createPaymentIntent = async (token, amount) => {
  * @param {number} amount - Payment amount
  * @returns {Promise} - Response with subscription data
  */
-export const subscribe = async (token, paymentMethod, paymentId, amount, paymentMethodType = "card") => {
+export const subscribe = async (token, paymentMethod , paymentId, amount) => {
   try {
     const response = await api.post(
       "/subscriptions/subscribe",
-      { paymentMethod, paymentId, amount, paymentMethodType },
+      { paymentMethod, paymentId, amount },
       {
         headers: {
           Authorization: `Bearer ${token}`,

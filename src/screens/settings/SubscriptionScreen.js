@@ -1,15 +1,7 @@
 "use client"
 
-import React, { useState, useEffect, useContext } from "react"
-import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  ScrollView,
-  ActivityIndicator,
-  Alert,
-} from "react-native"
+import { useState, useEffect, useContext } from "react"
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator, Alert } from "react-native"
 import { useNavigation } from "@react-navigation/native"
 import Ionicons from "react-native-vector-icons/Ionicons"
 import { AuthContext } from "../../context/AuthContext"
@@ -17,9 +9,11 @@ import { ThemeContext } from "../../context/ThemeContext"
 import { getTheme } from "../../utils/theme"
 import * as SubscriptionAPI from "../../api/subscription"
 import { StripeProvider, CardField, useStripe } from "@stripe/stripe-react-native"
+import * as stripe from '@stripe/stripe-react-native';
 
-const SUBSCRIPTION_PRICE = 4.99;
-const STRIPE_PUBLISHABLE_KEY = "pk_test_51N1v9ICmXVqoMpIrAxCprZ01ktSsXZKaSldTOjnyN760s2TjSO44Qaptir6qcSlrjfBRVJqDhDu3WJKLxHOWGw4C00TSdCKqWp"; // Replace with your actual Stripe key
+const SUBSCRIPTION_PRICE = 4.99
+const STRIPE_PUBLISHABLE_KEY =
+  "pk_test_51N1v9ICmXVqoMpIrAxCprZ01ktSsXZKaSldTOjnyN760s2TjSO44Qaptir6qcSlrjfBRVJqDhDu3WJKLxHOWGw4C00TSdCKqWp" // Replace with your actual Stripe key
 
 const SubscriptionScreen = () => {
   const navigation = useNavigation()
@@ -48,6 +42,7 @@ const SubscriptionScreen = () => {
       if (response.success) {
         setHasActiveSubscription(response.hasActiveSubscription)
         setSubscription(response.subscription)
+        console.log("Subscription details:", response.subscription)
       } else {
         console.error("Failed to fetch subscription details:", response.message)
       }
@@ -71,35 +66,31 @@ const SubscriptionScreen = () => {
       setCardError(null)
 
       // 1. Create payment method with Stripe
-      const { paymentMethod, error: paymentMethodError } = await createPaymentMethod({
-        type: 'card',
+      const { paymentMethod, error: paymentMethodError } = await stripe.createPaymentMethod({
+        paymentMethodType: "Card",
         billingDetails: {
-          email: authState.user?.email || '',
+          email: authState.user?.email || authState.user?.phoneNumber || "",
         },
       })
 
       if (paymentMethodError) {
         setCardError(paymentMethodError.message)
+        console.error("Payment method error:", paymentMethodError)
         return
       }
 
       // 2. Create payment intent on the server
-      const paymentIntentResponse = await SubscriptionAPI.createPaymentIntent(
-        authState.token,
-        SUBSCRIPTION_PRICE
-      )
+      const paymentIntentResponse = await SubscriptionAPI.createPaymentIntent(authState.token, SUBSCRIPTION_PRICE)
 
       if (!paymentIntentResponse.success) {
         Alert.alert("Error", paymentIntentResponse.message || "Failed to create payment")
         return
       }
 
-      // 3. Confirm payment with Stripe
+      // 3. Confirm payment with Stripe - pass the payment method ID
       const { error: confirmError } = await confirmPayment(
         paymentIntentResponse.clientSecret,
-        {
-          paymentMethodType: 'Card',
-        }
+        { paymentMethodType: 'Card', paymentMethodId: paymentMethod.id }
       )
 
       if (confirmError) {
@@ -110,18 +101,16 @@ const SubscriptionScreen = () => {
       // 4. Create subscription on the server
       const subscribeResponse = await SubscriptionAPI.subscribe(
         authState.token,
+        // paymentIntentResponse.paymentIntentId,
+        "stripe",
         paymentMethod.id,
-        paymentIntentResponse.paymentIntentId,
-        SUBSCRIPTION_PRICE
+        SUBSCRIPTION_PRICE,
       )
 
       if (subscribeResponse.success) {
         setHasActiveSubscription(true)
         setSubscription(subscribeResponse.subscription)
-        Alert.alert(
-          "Subscription Successful",
-          "Thank you for subscribing to CallNow Premium!"
-        )
+        Alert.alert("Subscription Successful", "Thank you for subscribing to CallNow Premium!")
       } else {
         Alert.alert("Error", subscribeResponse.message || "Failed to complete subscription")
       }
@@ -142,10 +131,7 @@ const SubscriptionScreen = () => {
       if (response.success) {
         setHasActiveSubscription(true)
         setSubscription(response.subscription)
-        Alert.alert(
-          "Free Trial Started",
-          "Your 7-day free trial has started. Enjoy CallNow Premium!"
-        )
+        Alert.alert("Free Trial Started", "Your 7-day free trial has started. Enjoy CallNow Premium!")
       } else {
         Alert.alert("Error", response.message || "Failed to start free trial")
       }
@@ -178,7 +164,7 @@ const SubscriptionScreen = () => {
                 setSubscription(updatedSubscription)
                 Alert.alert(
                   "Subscription Canceled",
-                  "Your subscription has been canceled. You'll have access until the end of your current billing period."
+                  "Your subscription has been canceled. You'll have access until the end of your current billing period.",
                 )
               } else {
                 Alert.alert("Error", response.message || "Failed to cancel subscription")
@@ -191,7 +177,7 @@ const SubscriptionScreen = () => {
             }
           },
         },
-      ]
+      ],
     )
   }
 
@@ -207,9 +193,7 @@ const SubscriptionScreen = () => {
     return (
       <View style={[styles.loadingContainer, { backgroundColor: currentTheme.background }]}>
         <ActivityIndicator size="large" color={currentTheme.primary} />
-        <Text style={[styles.loadingText, { color: currentTheme.placeholder }]}>
-          Loading subscription details...
-        </Text>
+        <Text style={[styles.loadingText, { color: currentTheme.placeholder }]}>Loading subscription details...</Text>
       </View>
     )
   }
@@ -221,9 +205,7 @@ const SubscriptionScreen = () => {
         <View style={[styles.header, { backgroundColor: currentTheme.card }]}>
           <View style={styles.headerContent}>
             <View style={styles.planBadge}>
-              <Text style={styles.planBadgeText}>
-                {hasActiveSubscription ? "Premium" : "Free Plan"}
-              </Text>
+              <Text style={styles.planBadgeText}>{hasActiveSubscription ? "Premium" : "Free Plan"}</Text>
             </View>
             <Text style={[styles.headerTitle, { color: currentTheme.text }]}>
               CallNow {hasActiveSubscription ? "Premium" : "Free"}
@@ -306,21 +288,23 @@ const SubscriptionScreen = () => {
                   number: "4242 4242 4242 4242",
                 }}
                 cardStyle={{
-                  backgroundColor: currentTheme.input,
+                  backgroundColor: theme === "dark" ? "#333333" : currentTheme.input,
                   textColor: currentTheme.text,
+                  placeholderColor: theme === "dark" ? "#999999" : currentTheme.placeholder,
+                  borderColor: currentTheme.border,
+                  borderWidth: 1,
+                  borderRadius: 8,
                 }}
                 style={styles.cardField}
                 onCardChange={(cardDetails) => {
-                  setCardDetails(cardDetails);
+                  setCardDetails(cardDetails)
                   if (cardDetails.complete) {
-                    setCardError(null);
+                    setCardError(null)
                   }
                 }}
               />
 
-              {cardError && (
-                <Text style={styles.errorText}>{cardError}</Text>
-              )}
+              {cardError && <Text style={styles.errorText}>{cardError}</Text>}
 
               <TouchableOpacity
                 style={[styles.subscribeButton, { backgroundColor: currentTheme.primary }]}
@@ -347,7 +331,8 @@ const SubscriptionScreen = () => {
               </TouchableOpacity>
 
               <Text style={[styles.termsText, { color: currentTheme.placeholder }]}>
-                By subscribing, you agree to our Terms of Service and Privacy Policy. Your subscription will automatically renew each month until canceled.
+                By subscribing, you agree to our Terms of Service and Privacy Policy. Your subscription will
+                automatically renew each month until canceled.
               </Text>
             </View>
           </View>
@@ -362,13 +347,10 @@ const SubscriptionScreen = () => {
 
             <View style={styles.detailItem}>
               <Text style={[styles.detailLabel, { color: currentTheme.placeholder }]}>Status</Text>
-              <View style={[
-                styles.statusBadge,
-                { backgroundColor: getStatusColor(subscription?.status, currentTheme) }
-              ]}>
-                <Text style={styles.statusBadgeText}>
-                  {formatStatus(subscription?.status)}
-                </Text>
+              <View
+                style={[styles.statusBadge, { backgroundColor: getStatusColor(subscription?.status, currentTheme) }]}
+              >
+                <Text style={styles.statusBadgeText}>{formatStatus(subscription?.status)}</Text>
               </View>
             </View>
 
@@ -441,32 +423,32 @@ const SubscriptionScreen = () => {
 const getStatusColor = (status, theme) => {
   switch (status) {
     case "active":
-      return theme.primary;
+      return theme.primary
     case "trial":
-      return "#FF9500";
+      return "#FF9500"
     case "canceled":
-      return "#FF3B30";
+      return "#FF3B30"
     case "expired":
-      return "#8E8E93";
+      return "#8E8E93"
     default:
-      return theme.placeholder;
+      return theme.placeholder
   }
-};
+}
 
 const formatStatus = (status) => {
   switch (status) {
     case "active":
-      return "Active";
+      return "Active"
     case "trial":
-      return "Trial";
+      return "Trial"
     case "canceled":
-      return "Canceled";
+      return "Canceled"
     case "expired":
-      return "Expired";
+      return "Expired"
     default:
-      return "Unknown";
+      return "Unknown"
   }
-};
+}
 
 const styles = StyleSheet.create({
   container: {
@@ -665,6 +647,6 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
     marginLeft: 8,
   },
-});
+})
 
-export default SubscriptionScreen;
+export default SubscriptionScreen
