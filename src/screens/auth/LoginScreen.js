@@ -68,6 +68,17 @@ const LoginScreen = ({ navigation }) => {
       const result = await login(fullPhoneNumber, password)
 
       if (result.success) {
+        // Login successful - navigation will be handled by AppNavigator
+      } else if (result.status === "suspended") {
+        // Handle suspended account
+        let message = result.message || "Your account has been suspended."
+
+        if (result.expiresAt) {
+          const expiryDate = new Date(result.expiresAt)
+          message += `\n\nYour account will be unsuspended on ${expiryDate.toLocaleDateString()} at ${expiryDate.toLocaleTimeString()}.`
+        }
+
+        Alert.alert("Account Suspended", message)
       } else if (result.message === 'Account not verified. Please verify your phone number first.') {
         navigation.navigate("OtpVerification", {
           phoneNumber: fullPhoneNumber,

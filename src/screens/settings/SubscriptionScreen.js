@@ -160,8 +160,8 @@ const SubscriptionScreen = () => {
 
               if (response.success) {
                 // Update subscription but keep hasActiveSubscription true until end date
-                const updatedSubscription = { ...subscription, status: "canceled", autoRenew: false }
-                setSubscription(updatedSubscription)
+                const updatedSubscription = { ...subscription, status: "canceled", autoRenew: false };
+                setSubscription(updatedSubscription);
                 Alert.alert(
                   "Subscription Canceled",
                   "Your subscription has been canceled. You'll have access until the end of your current billing period.",
@@ -217,7 +217,7 @@ const SubscriptionScreen = () => {
             ) : hasActiveSubscription ? (
               <Text style={[styles.headerSubtitle, { color: currentTheme.placeholder }]}>
                 {subscription?.status === "canceled"
-                  ? `Access until ${formatDate(subscription?.endDate)}`
+                  ? `Access until ${formatDate(subscription?.endDate)}` // <<< Displays access until date
                   : `Renews on ${formatDate(subscription?.endDate)}`}
               </Text>
             ) : (
@@ -249,18 +249,6 @@ const SubscriptionScreen = () => {
               <Text style={[styles.featureLabel, { color: currentTheme.text }]}>Call Quality</Text>
               <Text style={[styles.planValue, { color: currentTheme.placeholder }]}>Standard</Text>
               <Text style={[styles.planValue, { color: currentTheme.primary }]}>HD</Text>
-            </View>
-
-            <View style={[styles.comparisonRow, { borderTopColor: currentTheme.border }]}>
-              <Text style={[styles.featureLabel, { color: currentTheme.text }]}>Group Calls</Text>
-              <Text style={[styles.planValue, { color: currentTheme.placeholder }]}>Up to 4</Text>
-              <Text style={[styles.planValue, { color: currentTheme.primary }]}>Up to 8</Text>
-            </View>
-
-            <View style={[styles.comparisonRow, { borderTopColor: currentTheme.border }]}>
-              <Text style={[styles.featureLabel, { color: currentTheme.text }]}>Cloud Storage</Text>
-              <Text style={[styles.planValue, { color: currentTheme.placeholder }]}>1 GB</Text>
-              <Text style={[styles.planValue, { color: currentTheme.primary }]}>5 GB</Text>
             </View>
           </View>
         </View>

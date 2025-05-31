@@ -1,6 +1,6 @@
-const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || "http://192.168.10.28:5001/api"
-const API_BASE_URL_FOR_MEDIA = process.env.REACT_APP_API_BASE_URL_FOR_MEDIA || "http://192.168.10.28:5001"
-const SOCKET_URL = process.env.REACT_APP_SOCKET_URL || "http://192.168.10.28:5001"
+const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || "http://192.168.10.20:5001/api"
+const API_BASE_URL_FOR_MEDIA = process.env.REACT_APP_API_BASE_URL_FOR_MEDIA || "http://192.168.10.20:5001"
+const SOCKET_URL = process.env.REACT_APP_SOCKET_URL || "http://192.168.10.20:5001"
 const API_ENDPOINTS = {
   // Auth endpoints
   REGISTER: "/auth/register",
@@ -80,14 +80,13 @@ const API_ENDPOINTS = {
   // Call quality endpoints
   RECORD_METRICS: "/call-quality/metrics",
   GET_CALL_QUALITY_STATS: "/call-quality/stats",
-  GET_CALL_METRICS: "/call-quality/call",
+  GET_CALL_METRICS: "/call-quality/:callType/:callId",
 
   // ICE server endpoints
-  GET_ICE_SERVERS: "/ice-server",
-  ADD_ICE_SERVER: "/ice-server",
-  UPDATE_ICE_SERVER: "/ice-server",
-  DELETE_ICE_SERVER: "/ice-server",
-  GET_REGION_ICE_SERVERS: "/ice-server/region",
+  GET_ICE_SERVERS: "/ice-servers",
+  ADD_ICE_SERVER: "/ice-servers",
+  UPDATE_ICE_SERVER: "/ice-servers/:id",
+  DELETE_ICE_SERVER: "/ice-servers/:id",
 
   // Subscription endpoints
   GET_SUBSCRIPTION: "/subscriptions",
@@ -96,6 +95,14 @@ const API_ENDPOINTS = {
   CANCEL_SUBSCRIPTION: "/subscriptions/cancel",
   RENEW_SUBSCRIPTION: "/subscriptions/renew",
   START_FREE_TRIAL: "/subscriptions/trial",
+
+  // Admin endpoints
+  ADMIN_GET_USERS: "/admin/users",
+  ADMIN_GET_SUSPENDED_USERS: "/admin/users/suspended",
+  ADMIN_GET_USER_DETAILS: "/admin/users/:userId",
+  ADMIN_SUSPEND_USER: "/admin/users/:userId/suspend",
+  ADMIN_UNSUSPEND_USER: "/admin/users/:userId/unsuspend",
+  ADMIN_DASHBOARD_STATS: "/admin/stats",
 }
 
 export { API_BASE_URL, API_ENDPOINTS, API_BASE_URL_FOR_MEDIA, SOCKET_URL }

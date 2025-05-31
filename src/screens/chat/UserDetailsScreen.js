@@ -29,7 +29,7 @@ const UserProfileScreen = () => {
   const { userId, userName, userImage } = route.params
   const { state: authState } = useContext(AuthContext)
   const { theme } = useContext(ThemeContext)
-  const { socket, isConnected } = useContext(SocketContext) // Add this line
+  const { socket, isConnected, checkUserStatus } = useContext(SocketContext) // Add this line
   const currentTheme = getTheme(theme)
 
   const [userProfile, setUserProfile] = useState(null)
@@ -37,7 +37,7 @@ const UserProfileScreen = () => {
   const [error, setError] = useState(null)
   const [isUserOnline, setIsUserOnline] = useState(false) // Add this state
 
-  // Fetch user profile
+// Fetch user profile
   useEffect(() => {
     const fetchUserProfile = async () => {
       try {
@@ -60,11 +60,15 @@ const UserProfileScreen = () => {
     fetchUserProfile()
   }, [userId, authState.token])
 
-  // Listen for online status changes
+// Listen for online status changes
   useEffect(() => {
     if (socket && isConnected) {
       // Check if user is already online
-      socket.emit("get-user-status", { userId })
+      if (socket && typeof checkUserStatus === 'function') { // Ensure checkUserStatus is available
+        checkUserStatus(userId)
+      } else if (socket) { // Fallback if checkUserStatus is somehow not in context, though it should be
+        socket.emit("check-user-status", { userId }) // Use the event name defined in SocketContext
+      }
 
       // Listen for status changes
       const handleStatusChange = ({ userId: changedUserId, status }) => {
@@ -87,9 +91,9 @@ const UserProfileScreen = () => {
         socket.off("user-status")
       }
     }
-  }, [socket, isConnected, userId])
+  }, [socket, isConnected, userId, checkUserStatus])
 
-  // Start a chat with this user
+// Start a chat with this user
   const handleStartChat = async () => {
     try {
       // Check if conversation already exists
@@ -106,7 +110,7 @@ const UserProfileScreen = () => {
     }
   }
 
-  // Start a voice call
+// Start a voice call
   const handleVoiceCall = () => {
     if (userProfile) {
       navigation.navigate("Call", {
@@ -120,7 +124,7 @@ const UserProfileScreen = () => {
     }
   }
 
-  // Start a video call
+// Start a video call
   const handleVideoCall = () => {
     if (userProfile) {
       navigation.navigate("Call", {
@@ -134,7 +138,7 @@ const UserProfileScreen = () => {
     }
   }
 
-  // Share contact
+// Share contact
   const handleShareContact = () => {
     if (userProfile) {
       Share.share({
@@ -144,7 +148,7 @@ const UserProfileScreen = () => {
     }
   }
 
-  // Format date
+// Format date
   const formatDate = (dateString) => {
     const date = new Date(dateString)
     return date.toLocaleDateString("en-US", {
@@ -154,7 +158,7 @@ const UserProfileScreen = () => {
     })
   }
 
-  // Loading state
+// Loading state
   if (isLoading) {
     return (
       <View style={[styles.loadingContainer, { backgroundColor: currentTheme.background }]}>
@@ -163,7 +167,7 @@ const UserProfileScreen = () => {
     )
   }
 
-  // Error state
+// Error state
   if (error) {
     return (
       <View style={[styles.errorContainer, { backgroundColor: currentTheme.background }]}>

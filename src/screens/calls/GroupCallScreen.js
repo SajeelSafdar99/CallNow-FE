@@ -11,11 +11,12 @@ import {
   StatusBar,
   SafeAreaView,
   Dimensions,
-  FlatList,
   Alert,
   PermissionsAndroid,
   AppState,
-  ActivityIndicator,
+  ScrollView,
+  FlatList,
+  Modal,
 } from "react-native"
 import { useNavigation, useRoute } from "@react-navigation/native"
 import Ionicons from "react-native-vector-icons/Ionicons"
@@ -23,9 +24,10 @@ import { AuthContext } from "../../context/AuthContext"
 import { SocketContext } from "../../context/SocketContext"
 import { ThemeContext } from "../../context/ThemeContext"
 import { getTheme } from "../../utils/theme"
+// import * as CallAPI from '../../api/call';
 import * as GroupCallAPI from "../../api/group-calls"
-import * as IceServerAPI from "../../api/ice-server"
 import * as CallLogAPI from "../../api/call-log"
+import * as IceServerAPI from "../../api/ice-server"
 import { API_BASE_URL_FOR_MEDIA } from "../../config/api"
 import {
   RTCPeerConnection,
@@ -37,58 +39,81 @@ import {
 } from "react-native-webrtc"
 import { check, request, PERMISSIONS, RESULTS } from "react-native-permissions"
 import NetInfo from "@react-native-community/netinfo"
+import AudioManager from "../../utils/audio-manager"
+import AudioRouteSelector from "../../components/calls/AudioRouteSelector"
+import { recordCallQualityMetrics } from "../../api/call-quality"
 
 const { width, height } = Dimensions.get("window")
 
 const GroupCallScreen = () => {
   const navigation = useNavigation()
   const route = useRoute()
-  const { conversation, isVideo = false, groupCallId = null } = route.params
+  const {
+    conversationId,
+    conversationName,
+    participants: initialParticipants,
+    callType,
+    isIncoming = false,
+    callId: incomingCallId = null,
+  } = route.params
+
   const { state: authState } = useContext(AuthContext)
   const { socket, isConnected } = useContext(SocketContext)
   const { theme } = useContext(ThemeContext)
   const currentTheme = getTheme(theme)
 
   // Call state
-  const [callState, setCallState] = useState("initializing") // initializing, connecting, ongoing, ended
+  const [callState, setCallState] = useState("initializing") // initializing, connecting, ringing, ongoing, ended
   const [callDuration, setCallDuration] = useState(0)
-  const [activeGroupCallId, setActiveGroupCallId] = useState(groupCallId)
-  const [participants, setParticipants] = useState([])
-  const [isJoining, setIsJoining] = useState(false)
-  const [isCreator, setIsCreator] = useState(false)
+  const [callStartTime, setCallStartTime] = useState(null)
+  const [callId, setCallId] = useState(incomingCallId)
   const [callEndReason, setCallEndReason] = useState(null)
+
+  // Participants state
+  const [participants, setParticipants] = useState(initialParticipants || [])
+  const [activeParticipants, setActiveParticipants] = useState(new Map()) // participantId -> participant data
+  const [participantConnections, setParticipantConnections] = useState(new Map()) // participantId -> RTCPeerConnection
+  const [participantStreams, setParticipantStreams] = useState(new Map()) // participantId -> MediaStream
+  const [participantDevices, setParticipantDevices] = useState(new Map()) // participantId -> activeDevice
+  const [participantStatus, setParticipantStatus] = useState(new Map()) // participantId -> {status, quality, muted, videoEnabled}
 
   // Media state
   const [localStream, setLocalStream] = useState(null)
   const [isMuted, setIsMuted] = useState(false)
-  const [isSpeakerOn, setIsSpeakerOn] = useState(isVideo)
-  const [isVideoEnabled, setIsVideoEnabled] = useState(isVideo)
+  const [isSpeakerOn, setIsSpeakerOn] = useState(callType === "video")
+  const [isVideoEnabled, setIsVideoEnabled] = useState(callType === "video")
   const [isFrontCamera, setIsFrontCamera] = useState(true)
-  const [isScreenSharing, setIsScreenSharing] = useState(false)
+
+  // UI state
+  const [selectedParticipant, setSelectedParticipant] = useState(null) // For full-screen view
+  const [showParticipantsList, setShowParticipantsList] = useState(false)
+  const [showAddParticipants, setShowAddParticipants] = useState(false)
+  const [gridLayout, setGridLayout] = useState("auto") // auto, 1x1, 2x2, 3x3, etc.
 
   // Network state
   const [networkType, setNetworkType] = useState(null)
   const [isReconnecting, setIsReconnecting] = useState(false)
-  const [callQuality, setCallQuality] = useState("good") // good, fair, poor
+  const [callQuality, setCallQuality] = useState("good")
 
   // Refs
-  const peerConnectionsRef = useRef({}) // Map of userId -> RTCPeerConnection
-  const remoteStreamsRef = useRef({}) // Map of userId -> MediaStream
   const callTimerRef = useRef(null)
   const qualityMonitorRef = useRef(null)
   const iceServersRef = useRef([])
   const appStateRef = useRef(AppState.currentState)
   const isCallEndingRef = useRef(false)
-  const connectionIdsRef = useRef([])
+  const localStreamRef = useRef(null)
 
-  // Initialize call
+  // Audio route selector
+  const [showAudioRouteSelector, setShowAudioRouteSelector] = useState(false)
+
+  // Initialize group call
   useEffect(() => {
-    const setupCall = async () => {
+    const setupGroupCall = async () => {
       try {
         // Request permissions
         const hasPermissions = await requestPermissions()
         if (!hasPermissions) {
-          Alert.alert("Permission Required", "Camera and microphone permissions are required for group calls.", [
+          Alert.alert("Permission Required", "Camera and microphone permissions are required for calls.", [
             { text: "OK", onPress: () => navigation.goBack() },
           ])
           return
@@ -99,81 +124,87 @@ const GroupCallScreen = () => {
         if (iceServersResponse.success) {
           iceServersRef.current = iceServersResponse.iceServers
         } else {
-          // Fallback to default STUN servers
           iceServersRef.current = [{ urls: "stun:stun.l.google.com:19302" }, { urls: "stun:stun1.l.google.com:19302" }]
         }
 
         // Initialize media stream
         await setupMediaStream()
 
-        // Check if joining existing call or creating new one
-        if (activeGroupCallId) {
-          // Join existing call
-          await joinExistingCall()
+        // Initialize audio session
+        await AudioManager.initializeAudioSession(callType === "video")
+
+        if (!isIncoming) {
+          // Initiate outgoing group call
+          await initiateGroupCall()
         } else {
-          // Create new call
-          await createNewCall()
+          // Handle incoming group call
+          setCallState("ringing")
+          await AudioManager.startRingtone()
         }
 
         // Set up network monitoring
         setupNetworkMonitoring()
-
-        // Set up app state monitoring
         setupAppStateMonitoring()
       } catch (error) {
         console.error("Error setting up group call:", error)
-        handleLeaveCall("setup_failed")
+        handleEndCall("setup_failed")
       }
     }
 
-    setupCall()
+    setupGroupCall()
 
-    // Clean up on unmount
     return () => {
       cleanupCall()
     }
   }, [])
 
-  // Set up socket event listeners
+  // Socket event listeners for group calls
   useEffect(() => {
-    if (socket && isConnected && activeGroupCallId) {
-      // Join group call room
-      socket.emit("join-group-call", activeGroupCallId)
+    if (socket && isConnected) {
+      // Group call events
+      socket.on("group-call-answered", handleGroupCallAnswered)
+      socket.on("group-call-rejected", handleGroupCallRejected)
+      socket.on("group-call-ended", handleGroupCallEnded)
+      socket.on("participant-joined", handleParticipantJoined)
+      socket.on("participant-left", handleParticipantLeft)
+      socket.on("participant-muted", handleParticipantMuted)
+      socket.on("participant-video-toggled", handleParticipantVideoToggled)
 
-      // Listen for new participants
-      socket.on("group-call-user-joined", handleUserJoined)
+      // WebRTC signaling for group calls
+      socket.on("group-ice-candidate", handleGroupIceCandidate)
+      socket.on("group-offer", handleGroupOffer)
+      socket.on("group-answer", handleGroupAnswer)
 
-      // Listen for participants leaving
-      socket.on("group-call-user-left", handleUserLeft)
+      // Call quality and network events
+      socket.on("group-call-quality-issue", handleGroupCallQualityIssue)
+      socket.on("group-network-fallback", handleGroupNetworkFallback)
+      socket.on("group-ice-restart-needed", handleGroupIceRestartNeeded)
 
-      // Listen for offers
-      socket.on("group-call-offer", handleRemoteOffer)
-
-      // Listen for answers
-      socket.on("group-call-answer", handleRemoteAnswer)
-
-      // Listen for ICE candidates
-      socket.on("group-call-ice-candidate", handleRemoteIceCandidate)
-
-      // Listen for screen sharing updates
-      socket.on("group-call-screen-sharing", handleScreenSharingUpdate)
+      // Participant device status
+      socket.on("participant-device-change", handleParticipantDeviceChange)
+      socket.on("participant-status-update", handleParticipantStatusUpdate)
 
       return () => {
-        // Leave group call room
-        socket.emit("leave-group-call", activeGroupCallId)
-
-        // Remove listeners
-        socket.off("group-call-user-joined", handleUserJoined)
-        socket.off("group-call-user-left", handleUserLeft)
-        socket.off("group-call-offer", handleRemoteOffer)
-        socket.off("group-call-answer", handleRemoteAnswer)
-        socket.off("group-call-ice-candidate", handleRemoteIceCandidate)
-        socket.off("group-call-screen-sharing", handleScreenSharingUpdate)
+        socket.off("group-call-answered", handleGroupCallAnswered)
+        socket.off("group-call-rejected", handleGroupCallRejected)
+        socket.off("group-call-ended", handleGroupCallEnded)
+        socket.off("participant-joined", handleParticipantJoined)
+        socket.off("participant-left", handleParticipantLeft)
+        socket.off("participant-muted", handleParticipantMuted)
+        socket.off("participant-video-toggled", handleParticipantVideoToggled)
+        socket.off("group-ice-candidate", handleGroupIceCandidate)
+        socket.off("group-offer", handleGroupOffer)
+        socket.off("group-answer", handleGroupAnswer)
+        socket.off("group-call-quality-issue", handleGroupCallQualityIssue)
+        socket.off("group-network-fallback", handleGroupNetworkFallback)
+        socket.off("group-ice-restart-needed", handleGroupIceRestartNeeded)
+        socket.off("participant-device-change", handleParticipantDeviceChange)
+        socket.off("participant-status-update", handleParticipantStatusUpdate)
       }
     }
-  }, [socket, isConnected, activeGroupCallId])
+  }, [socket, isConnected, callId])
 
-  // Request permissions
+  // Request permissions (same as CallScreen)
   const requestPermissions = async () => {
     if (Platform.OS === "android") {
       try {
@@ -186,7 +217,7 @@ const GroupCallScreen = () => {
         })
 
         let cameraPermission = RESULTS.GRANTED
-        if (isVideo) {
+        if (callType === "video") {
           cameraPermission = await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.CAMERA, {
             title: "Camera Permission",
             message: "CallNow needs access to your camera for video calls.",
@@ -198,14 +229,14 @@ const GroupCallScreen = () => {
 
         return (
           micPermission === PermissionsAndroid.RESULTS.GRANTED &&
-          (!isVideo || cameraPermission === PermissionsAndroid.RESULTS.GRANTED)
+          (callType !== "video" || cameraPermission === PermissionsAndroid.RESULTS.GRANTED)
         )
       } catch (err) {
         console.error("Error requesting permissions:", err)
         return false
       }
     } else {
-      // iOS
+      // iOS permissions handling
       try {
         const micStatus = await check(PERMISSIONS.IOS.MICROPHONE)
         if (micStatus !== RESULTS.GRANTED) {
@@ -213,7 +244,7 @@ const GroupCallScreen = () => {
           if (micResult !== RESULTS.GRANTED) return false
         }
 
-        if (isVideo) {
+        if (callType === "video") {
           const cameraStatus = await check(PERMISSIONS.IOS.CAMERA)
           if (cameraStatus !== RESULTS.GRANTED) {
             const cameraResult = await request(PERMISSIONS.IOS.CAMERA)
@@ -229,24 +260,25 @@ const GroupCallScreen = () => {
     }
   }
 
-  // Set up media stream
+  // Set up media stream (same as CallScreen)
   const setupMediaStream = async () => {
     try {
       const constraints = {
         audio: true,
-        video: isVideo
-          ? {
-            facingMode: isFrontCamera ? "user" : "environment",
-            width: { ideal: 1280 },
-            height: { ideal: 720 },
-            frameRate: { ideal: 30 },
-          }
-          : false,
+        video:
+          callType === "video"
+            ? {
+              facingMode: isFrontCamera ? "user" : "environment",
+              width: { ideal: 1280 },
+              height: { ideal: 720 },
+              frameRate: { ideal: 30 },
+            }
+            : false,
       }
 
       const stream = await mediaDevices.getUserMedia(constraints)
       setLocalStream(stream)
-
+      localStreamRef.current = stream
       return stream
     } catch (error) {
       console.error("Error getting user media:", error)
@@ -254,226 +286,172 @@ const GroupCallScreen = () => {
     }
   }
 
-  // Set up network monitoring
+  // Set up network monitoring (same as CallScreen)
   const setupNetworkMonitoring = () => {
-    // Subscribe to network info updates
     const unsubscribe = NetInfo.addEventListener((state) => {
       setNetworkType(state.type)
-
-      // Handle network changes
       if (!state.isConnected && callState === "ongoing") {
         setIsReconnecting(true)
-        // Try to reconnect peer connections
-        Object.values(peerConnectionsRef.current).forEach((pc) => {
-          if (pc && (pc.iceConnectionState === "disconnected" || pc.iceConnectionState === "failed")) {
-            restartIce(pc)
-          }
+        // Restart ICE for all connections
+        participantConnections.forEach((pc, participantId) => {
+          if (pc) restartIceForParticipant(participantId)
         })
       } else if (state.isConnected && isReconnecting) {
         setIsReconnecting(false)
       }
     })
-
     return unsubscribe
   }
 
-  // Set up app state monitoring
+  // Set up app state monitoring (same as CallScreen)
   const setupAppStateMonitoring = () => {
     const subscription = AppState.addEventListener("change", (nextAppState) => {
       if (appStateRef.current.match(/inactive|background/) && nextAppState === "active" && callState === "ongoing") {
-        // App has come to the foreground during a call
-        // Check connections and restart if needed
-        Object.values(peerConnectionsRef.current).forEach((pc) => {
-          if (pc && (pc.iceConnectionState === "disconnected" || pc.iceConnectionState === "failed")) {
-            restartIce(pc)
+        // Check all connections and restart if needed
+        participantConnections.forEach((pc, participantId) => {
+          if (pc?.iceConnectionState === "disconnected" || pc?.iceConnectionState === "failed") {
+            restartIceForParticipant(participantId)
           }
         })
       }
       appStateRef.current = nextAppState
     })
 
-    return () => {
-      subscription.remove()
-    }
+    return () => subscription.remove()
   }
 
-  // Create new group call
-  const createNewCall = async () => {
+  // Initiate outgoing group call with device targeting
+  const initiateGroupCall = async () => {
     try {
       setCallState("connecting")
 
-      // Create group call in backend
+      // Check online status for all participants
+      const participantStatuses = new Map()
+      const participantDevicesMap = new Map()
+
+      for (const participant of participants) {
+        if (participant._id !== authState.user.id) {
+          // Check each participant's status and active device
+          if (socket) {
+            socket.emit("check-user-status", { userId: participant._id })
+
+            // Wait for status response
+            const statusPromise = new Promise((resolve) => {
+              const handleStatusResponse = ({ userId, status, activeDevice }) => {
+                if (userId === participant._id) {
+                  socket.off("user-status-response", handleStatusResponse)
+                  resolve({ status, activeDevice })
+                }
+              }
+              socket.on("user-status-response", handleStatusResponse)
+
+              setTimeout(() => {
+                socket.off("user-status-response", handleStatusResponse)
+                resolve({ status: "offline", activeDevice: null })
+              }, 3000)
+            })
+
+            const { status, activeDevice } = await statusPromise
+            participantStatuses.set(participant._id, status)
+            participantDevicesMap.set(participant._id, activeDevice)
+          }
+        }
+      }
+
+      setParticipantDevices(participantDevicesMap)
+
+      // Initiate group call in backend
+      const groupCallData = {
+        conversationId,
+        type: callType,
+        name: conversationName,
+        initialParticipants: participants.map((p) => ({
+          userId: p._id,
+          targetDeviceId: participantDevicesMap.get(p._id), // Ensure participantDevicesMap is correctly populated
+        })),
+      }
+      // Ensure groupCallData.initialParticipants matches the new API's expected format:
+      // Array<{userId: string, targetDeviceId?: string}>
+      const apiPayload = {
+        conversationId: groupCallData.conversationId,
+        type: groupCallData.type,
+        name: groupCallData.name,
+        initialParticipants: groupCallData.initialParticipants, // This should already be in the correct format
+      }
       const response = await GroupCallAPI.createGroupCall(
-        {
-          conversationId: conversation._id,
-          type: isVideo ? "video" : "audio",
-          name: conversation.groupName || "Group Call",
-        },
-        authState.token,
+        apiPayload.conversationId,
+        apiPayload.type,
+        apiPayload.name,
+        apiPayload.initialParticipants,
       )
 
-      if (response.success) {
-        const newGroupCallId = response.groupCall._id
-        setActiveGroupCallId(newGroupCallId)
-        setIsCreator(true)
+      if (response.success && response.groupCall) {
+        const newCallId = response.groupCall._id
 
-        // Update participants
-        setParticipants(
-          response.groupCall.participants.map((p) => ({
-            ...p.user,
-            isActive: p.isActive,
-            isSharingScreen: p.sharingScreen,
-            joinedAt: p.joinedAt,
-          })),
+        setCallId(newCallId)
+
+        // Send group call offers to all participants
+        const onlineParticipants = participants.filter(
+          (p) => p._id !== authState.user.id && participantStatuses.get(p._id) === "online",
         )
 
-        // Start call timer
-        callTimerRef.current = setInterval(() => {
-          setCallDuration((prev) => prev + 1)
-        }, 1000)
+        if (onlineParticipants.length > 0) {
+          setCallState("ringing")
+          await AudioManager.startRingback()
+        } else {
+          setCallState("calling")
+        }
 
-        // Start quality monitoring
-        startQualityMonitoring()
+        // Create peer connections for all participants
+        for (const participant of participants) {
+          if (participant._id !== authState.user.id) {
+            await createPeerConnectionForParticipant(participant._id)
+          }
+        }
 
-        // Update call state
-        setCallState("ongoing")
+        // Send offers via socket
+        // if (socket && isConnected) {
+        //   socket.emit('group-call-offer', { // This might be handled by the backend now
+        //     callId: newCallId,
+        //     conversationId,
+        //     participants: participants.map(p => ({
+        //       userId: p._id,
+        //       targetDeviceId: participantDevicesMap.get(p._id),
+        //     })),
+        //     callType,
+        //     callerInfo: {
+        //       id: authState.user.id,
+        //       name: authState.user.name,
+        //       profilePicture: authState.user.profilePicture,
+        //     },
+        //   });
+        // }
 
-        // Log call created event
-        await CallLogAPI.logCallEvent(authState.token, newGroupCallId, "group", "call_created", {
-          callType: isVideo ? "video" : "audio",
+        // Log group call initiated
+        await CallLogAPI.logCallEvent(authState.token, newCallId, "group", "call_initiated", {
+          callType,
+          participantCount: participants.length,
+          onlineParticipants: onlineParticipants.length,
         })
 
-        // Notify others via socket that you've joined
-        if (socket && isConnected) {
-          socket.emit("group-call-user-joined", {
-            groupCallId: newGroupCallId,
-            user: {
-              _id: authState.user.id,
-              name: authState.user.name,
-              profilePicture: authState.user.profilePicture,
-            },
-          })
-        }
+        // Set timeout for call not answered
+        setTimeout(() => {
+          if (callState === "ringing" || callState === "calling") {
+            handleEndCall("no_answer")
+          }
+        }, 60000)
       } else {
-        console.error("Failed to create group call:", response.message)
-        handleLeaveCall("create_failed")
+        console.error("Failed to initiate group call:", response.message)
+        await handleEndCall("initiate_failed")
       }
     } catch (error) {
-      console.error("Error creating group call:", error)
-      handleLeaveCall("create_failed")
+      console.error("Error initiating group call:", error)
+      await handleEndCall("initiate_failed")
     }
   }
 
-  // Join existing group call
-  const joinExistingCall = async () => {
-    try {
-      setIsJoining(true)
-      setCallState("connecting")
-
-      // Get call details
-      const response = await GroupCallAPI.getGroupCallDetails(activeGroupCallId, authState.token)
-
-      if (response.success) {
-        // Update participants
-        setParticipants(
-          response.groupCall.participants.map((p) => ({
-            ...p.user,
-            isActive: p.isActive,
-            isSharingScreen: p.sharingScreen,
-            joinedAt: p.joinedAt,
-          })),
-        )
-
-        // Check if user is creator
-        setIsCreator(response.groupCall.initiator._id === authState.user.id)
-
-        // Join call in backend
-        const joinResponse = await GroupCallAPI.joinGroupCall(activeGroupCallId, { connectionIds: [] }, authState.token)
-
-        if (joinResponse.success) {
-          // Create peer connections with all active participants
-          const activeParticipants = joinResponse.groupCall.participants.filter(
-            (p) => p.isActive && p.user._id !== authState.user.id,
-          )
-
-          // Create connection IDs for each participant
-          const newConnectionIds = []
-
-          for (const participant of activeParticipants) {
-            const connectionId = `${authState.user.id}-${participant.user._id}-${Date.now()}`
-            newConnectionIds.push(connectionId)
-
-            // Create peer connection
-            const pc = await createPeerConnection(participant.user._id, connectionId)
-
-            // Create and send offer
-            const offer = await pc.createOffer()
-            await pc.setLocalDescription(offer)
-
-            // Send offer via socket
-            if (socket && isConnected) {
-              socket.emit("group-call-offer", {
-                groupCallId: activeGroupCallId,
-                receiverId: participant.user._id,
-                offer,
-                connectionId,
-              })
-            }
-          }
-
-          // Update connection IDs in backend
-          if (newConnectionIds.length > 0) {
-            connectionIdsRef.current = newConnectionIds
-            await GroupCallAPI.updateConnectionIds(
-              activeGroupCallId,
-              { connectionIds: newConnectionIds },
-              authState.token,
-            )
-          }
-
-          // Start call timer
-          callTimerRef.current = setInterval(() => {
-            setCallDuration((prev) => prev + 1)
-          }, 1000)
-
-          // Start quality monitoring
-          startQualityMonitoring()
-
-          // Update call state
-          setCallState("ongoing")
-
-          // Log call joined event
-          await CallLogAPI.logCallEvent(authState.token, activeGroupCallId, "group", "call_joined", {})
-
-          // Notify others via socket that you've joined
-          if (socket && isConnected) {
-            socket.emit("group-call-user-joined", {
-              groupCallId: activeGroupCallId,
-              user: {
-                _id: authState.user.id,
-                name: authState.user.name,
-                profilePicture: authState.user.profilePicture,
-              },
-            })
-          }
-        } else {
-          console.error("Failed to join group call:", joinResponse.message)
-          handleLeaveCall("join_failed")
-        }
-      } else {
-        console.error("Failed to get group call details:", response.message)
-        handleLeaveCall("join_failed")
-      }
-    } catch (error) {
-      console.error("Error joining group call:", error)
-      handleLeaveCall("join_failed")
-    } finally {
-      setIsJoining(false)
-    }
-  }
-
-  // Create WebRTC peer connection for a participant
-  const createPeerConnection = async (participantId, connectionId) => {
+  // Create peer connection for a specific participant
+  const createPeerConnectionForParticipant = async (participantId) => {
     try {
       const configuration = {
         iceServers: iceServersRef.current,
@@ -482,21 +460,21 @@ const GroupCallScreen = () => {
 
       const pc = new RTCPeerConnection(configuration)
 
-      // Add local stream tracks to peer connection
-      if (localStream) {
-        localStream.getTracks().forEach((track) => {
-          pc.addTrack(track, localStream)
+      // Add local stream tracks
+      if (localStreamRef.current) {
+        localStreamRef.current.getTracks().forEach((track) => {
+          pc.addTrack(track, localStreamRef.current)
         })
       }
 
       // Handle ICE candidates
       pc.onicecandidate = ({ candidate }) => {
-        if (candidate && socket && isConnected && activeGroupCallId) {
-          socket.emit("group-call-ice-candidate", {
-            groupCallId: activeGroupCallId,
-            receiverId: participantId,
+        if (candidate && socket && isConnected && callId) {
+          socket.emit("group-ice-candidate", {
+            callId,
             candidate,
-            connectionId,
+            fromParticipant: authState.user.id,
+            toParticipant: participantId,
           })
         }
       }
@@ -506,231 +484,319 @@ const GroupCallScreen = () => {
         console.log(`ICE connection state for ${participantId}:`, pc.iceConnectionState)
 
         if (pc.iceConnectionState === "failed" || pc.iceConnectionState === "disconnected") {
-          // Try to restart ICE if connection fails
           if (callState === "ongoing") {
-            restartIce(pc, participantId, connectionId)
+            setIsReconnecting(true)
+            restartIceForParticipant(participantId)
           }
+        } else if (pc.iceConnectionState === "connected" || pc.iceConnectionState === "completed") {
+          setIsReconnecting(false)
         }
       }
 
       // Handle remote stream
       pc.ontrack = (event) => {
         if (event.streams && event.streams[0]) {
-          // Store remote stream
-          remoteStreamsRef.current[participantId] = event.streams[0]
+          setParticipantStreams((prev) => new Map(prev.set(participantId, event.streams[0])))
 
-          // Force update to render new stream
-          setParticipants((prev) => {
-            const updated = [...prev]
-            const index = updated.findIndex((p) => p._id === participantId)
-            if (index !== -1) {
-              updated[index] = { ...updated[index], hasStream: true }
-            }
-            return updated
-          })
+          // Check if remote stream has video tracks
+          const hasVideoTracks = event.streams[0].getVideoTracks().length > 0
+          setParticipantStatus(
+            (prev) =>
+              new Map(
+                prev.set(participantId, {
+                  ...prev.get(participantId),
+                  videoEnabled: hasVideoTracks,
+                }),
+              ),
+          )
         }
       }
 
-      // Store peer connection
-      peerConnectionsRef.current[participantId] = pc
+      // Store the peer connection
+      setParticipantConnections((prev) => new Map(prev.set(participantId, pc)))
+
       return pc
     } catch (error) {
       console.error(`Error creating peer connection for ${participantId}:`, error)
-      throw new Error("Failed to create peer connection")
+      throw error
     }
   }
 
-  // Handle new user joined
-  const handleUserJoined = async ({ groupCallId, user }) => {
-    if (groupCallId === activeGroupCallId && user._id !== authState.user.id) {
-      // Add user to participants if not already there
-      setParticipants((prev) => {
-        const exists = prev.some((p) => p._id === user._id)
-        if (exists) {
-          return prev.map((p) => (p._id === user._id ? { ...p, isActive: true } : p))
-        } else {
-          return [...prev, { ...user, isActive: true }]
+  // Handle group call answered
+  const handleGroupCallAnswered = async ({ callId: answeredCallId, participantId, answer }) => {
+    try {
+      if (callId === answeredCallId) {
+        const pc = participantConnections.get(participantId)
+        if (pc) {
+          const rtcSessionDescription = new RTCSessionDescription(answer)
+          await pc.setRemoteDescription(rtcSessionDescription)
+
+          // Add participant to active participants
+          const participant = participants.find((p) => p._id === participantId)
+          if (participant) {
+            setActiveParticipants((prev) => new Map(prev.set(participantId, participant)))
+          }
+
+          // If this is the first participant to answer, start the call
+          if (callState === "ringing" || callState === "calling") {
+            setCallState("ongoing")
+            setCallStartTime(new Date())
+            await AudioManager.stopRingback()
+
+            // Start call timer
+            callTimerRef.current = setInterval(() => {
+              setCallDuration((prev) => prev + 1)
+            }, 1000)
+
+            // Start quality monitoring
+            startQualityMonitoring()
+          }
         }
+      }
+    } catch (error) {
+      console.error("Error handling group call answer:", error)
+    }
+  }
+
+  // Handle participant joined during ongoing call
+  const handleParticipantJoined = async ({ callId: joinedCallId, participant, offer }) => {
+    try {
+      if (callId === joinedCallId && callState === "ongoing") {
+        // Create peer connection for new participant
+        const pc = await createPeerConnectionForParticipant(participant._id)
+
+        if (offer) {
+          // Set remote description and create answer
+          const rtcSessionDescription = new RTCSessionDescription(offer)
+          await pc.setRemoteDescription(rtcSessionDescription)
+
+          const answer = await pc.createAnswer()
+          await pc.setLocalDescription(answer)
+
+          // Send answer back
+          if (socket && isConnected) {
+            socket.emit("group-answer", {
+              callId,
+              fromParticipant: authState.user.id,
+              toParticipant: participant._id,
+              answer,
+            })
+          }
+        }
+
+        // Add to active participants
+        setActiveParticipants((prev) => new Map(prev.set(participant._id, participant)))
+
+        // Log participant joined
+        await CallLogAPI.logCallEvent(authState.token, callId, "group", "participant_joined", {
+          participantId: participant._id,
+          participantName: participant.name,
+        })
+      }
+    } catch (error) {
+      console.error("Error handling participant joined:", error)
+    }
+  }
+
+  // Handle participant left
+  const handleParticipantLeft = ({ callId: leftCallId, participantId }) => {
+    if (callId === leftCallId) {
+      // Remove participant from active participants
+      setActiveParticipants((prev) => {
+        const newMap = new Map(prev)
+        newMap.delete(participantId)
+        return newMap
       })
 
-      // Wait for the other user to send an offer
-      console.log(`User ${user.name} joined the call`)
+      // Close and remove peer connection
+      const pc = participantConnections.get(participantId)
+      if (pc) {
+        pc.close()
+        setParticipantConnections((prev) => {
+          const newMap = new Map(prev)
+          newMap.delete(participantId)
+          return newMap
+        })
+      }
+
+      // Remove participant stream
+      setParticipantStreams((prev) => {
+        const newMap = new Map(prev)
+        newMap.delete(participantId)
+        return newMap
+      })
+
+      // Remove participant status
+      setParticipantStatus((prev) => {
+        const newMap = new Map(prev)
+        newMap.delete(participantId)
+        return newMap
+      })
+
+      // If no participants left, end call
+      if (activeParticipants.size <= 1) {
+        handleEndCall("all_participants_left")
+      }
     }
   }
 
-  // Handle user left
-  const handleUserLeft = ({ groupCallId, userId }) => {
-    if (groupCallId === activeGroupCallId) {
-      // Update participant status
-      setParticipants((prev) => prev.map((p) => (p._id === userId ? { ...p, isActive: false } : p)))
-
-      // Clean up peer connection
-      if (peerConnectionsRef.current[userId]) {
-        peerConnectionsRef.current[userId].close()
-        delete peerConnectionsRef.current[userId]
-      }
-
-      // Clean up remote stream
-      if (remoteStreamsRef.current[userId]) {
-        delete remoteStreamsRef.current[userId]
-      }
-
-      console.log(`User ${userId} left the call`)
+  // Handle participant muted/unmuted
+  const handleParticipantMuted = ({ callId: mutedCallId, participantId, isMuted }) => {
+    if (callId === mutedCallId) {
+      setParticipantStatus(
+        (prev) =>
+          new Map(
+            prev.set(participantId, {
+              ...prev.get(participantId),
+              muted: isMuted,
+            }),
+          ),
+      )
     }
   }
 
-  // Handle remote offer
-  const handleRemoteOffer = async ({ groupCallId, senderId, offer, connectionId }) => {
+  // Handle participant video toggled
+  const handleParticipantVideoToggled = ({ callId: videoCallId, participantId, isVideoEnabled }) => {
+    if (callId === videoCallId) {
+      setParticipantStatus(
+        (prev) =>
+          new Map(
+            prev.set(participantId, {
+              ...prev.get(participantId),
+              videoEnabled: isVideoEnabled,
+            }),
+          ),
+      )
+    }
+  }
+
+  // Handle group ICE candidate
+  const handleGroupIceCandidate = async ({ callId: iceCallId, candidate, fromParticipant }) => {
     try {
-      if (groupCallId === activeGroupCallId && callState === "ongoing") {
-        // Create peer connection if it doesn't exist
-        let pc = peerConnectionsRef.current[senderId]
+      if (callId === iceCallId) {
+        const pc = participantConnections.get(fromParticipant)
+        if (pc) {
+          const iceCandidate = new RTCIceCandidate(candidate)
+          await pc.addIceCandidate(iceCandidate)
+        }
+      }
+    } catch (error) {
+      console.error("Error adding group ICE candidate:", error)
+    }
+  }
+
+  // Handle group offer (for incoming calls or new participants)
+  const handleGroupOffer = async ({ callId: offerCallId, fromParticipant, offer }) => {
+    try {
+      if (callId === offerCallId) {
+        let pc = participantConnections.get(fromParticipant)
+
         if (!pc) {
-          pc = await createPeerConnection(senderId, connectionId)
+          pc = await createPeerConnectionForParticipant(fromParticipant)
         }
 
-        // Set remote description
-        await pc.setRemoteDescription(new RTCSessionDescription(offer))
+        const rtcSessionDescription = new RTCSessionDescription(offer)
+        await pc.setRemoteDescription(rtcSessionDescription)
 
-        // Create answer
         const answer = await pc.createAnswer()
         await pc.setLocalDescription(answer)
 
-        // Send answer via socket
+        // Send answer back
         if (socket && isConnected) {
-          socket.emit("group-call-answer", {
-            groupCallId,
-            receiverId: senderId,
+          socket.emit("group-answer", {
+            callId,
+            fromParticipant: authState.user.id,
+            toParticipant: fromParticipant,
             answer,
-            connectionId,
           })
         }
       }
     } catch (error) {
-      console.error("Error handling remote offer:", error)
+      console.error("Error handling group offer:", error)
     }
   }
 
-  // Handle remote answer
-  const handleRemoteAnswer = async ({ groupCallId, senderId, answer, connectionId }) => {
+  // Handle group answer
+  const handleGroupAnswer = async ({ callId: answerCallId, fromParticipant, answer }) => {
     try {
-      if (groupCallId === activeGroupCallId && callState === "ongoing") {
-        const pc = peerConnectionsRef.current[senderId]
+      if (callId === answerCallId) {
+        const pc = participantConnections.get(fromParticipant)
         if (pc) {
-          await pc.setRemoteDescription(new RTCSessionDescription(answer))
+          const rtcSessionDescription = new RTCSessionDescription(answer)
+          await pc.setRemoteDescription(rtcSessionDescription)
         }
       }
     } catch (error) {
-      console.error("Error handling remote answer:", error)
+      console.error("Error handling group answer:", error)
     }
   }
 
-  // Handle remote ICE candidate
-  const handleRemoteIceCandidate = async ({ groupCallId, senderId, candidate, connectionId }) => {
+  // Restart ICE for specific participant
+  const restartIceForParticipant = async (participantId) => {
     try {
-      if (groupCallId === activeGroupCallId && callState === "ongoing") {
-        const pc = peerConnectionsRef.current[senderId]
-        if (pc) {
-          await pc.addIceCandidate(new RTCIceCandidate(candidate))
-        }
-      }
-    } catch (error) {
-      console.error("Error adding remote ICE candidate:", error)
-    }
-  }
-
-  // Handle screen sharing update
-  const handleScreenSharingUpdate = ({ groupCallId, userId, isSharing }) => {
-    if (groupCallId === activeGroupCallId) {
-      // Update participant status
-      setParticipants((prev) => prev.map((p) => (p._id === userId ? { ...p, isSharingScreen: isSharing } : p)))
-    }
-  }
-
-  // Restart ICE connection
-  const restartIce = async (pc, participantId, connectionId) => {
-    try {
+      const pc = participantConnections.get(participantId)
       if (pc && callState === "ongoing") {
+        // Notify the participant
+        if (socket && isConnected) {
+          socket.emit("group-ice-restart-request", {
+            callId,
+            fromParticipant: authState.user.id,
+            toParticipant: participantId,
+          })
+        }
+
         // Create new offer with ICE restart
         const offer = await pc.createOffer({ iceRestart: true })
         await pc.setLocalDescription(offer)
 
-        // Send the offer via signaling
-        if (socket && isConnected && participantId) {
-          socket.emit("group-call-offer", {
-            groupCallId: activeGroupCallId,
-            receiverId: participantId,
+        // Send the offer
+        if (socket && isConnected) {
+          socket.emit("group-offer", {
+            callId,
+            fromParticipant: authState.user.id,
+            toParticipant: participantId,
             offer,
-            connectionId,
           })
         }
-
-        // Log ICE restart event
-        await CallLogAPI.logCallEvent(authState.token, activeGroupCallId, "group", "ice_restart", { participantId })
       }
     } catch (error) {
-      console.error("Error restarting ICE:", error)
+      console.error(`Error restarting ICE for ${participantId}:`, error)
     }
   }
 
-  // Start call quality monitoring
+  // Start quality monitoring for all connections
   const startQualityMonitoring = () => {
     qualityMonitorRef.current = setInterval(async () => {
       try {
         if (callState === "ongoing") {
-          // Get stats from all peer connections
-          const allStats = {}
+          const allMetrics = []
 
-          for (const [participantId, pc] of Object.entries(peerConnectionsRef.current)) {
+          for (const [participantId, pc] of participantConnections) {
             if (pc) {
               const stats = await pc.getStats()
-              const metricsData = processRTCStats(stats)
-              allStats[participantId] = metricsData
+              const metricsData = processRTCStats(stats, participantId)
+              allMetrics.push(metricsData)
+
+              // Update participant quality status
+              updateParticipantQualityUI(participantId, metricsData)
             }
           }
 
-          // Calculate average metrics
-          const avgMetrics = calculateAverageMetrics(allStats)
-
-          // Update local UI based on metrics
-          updateCallQualityUI(avgMetrics)
-
-          // Send metrics to backend
-          await CallLogAPI.logCallEvent(authState.token, activeGroupCallId, "group", "quality_metrics", {
-            metrics: avgMetrics,
+          // Record metrics for the group call
+          await recordCallQualityMetrics(authState.token, callId, "group", {
+            participantMetrics: allMetrics,
+            overallQuality: calculateOverallQuality(allMetrics),
           })
-
-          // If quality is poor, consider fallback options
-          if (
-            avgMetrics.qualityScore &&
-            (avgMetrics.qualityScore.audio < 2 || (isVideo && avgMetrics.qualityScore.video < 2))
-          ) {
-            // If video call with poor quality, suggest falling back to audio
-            if (isVideo && isVideoEnabled) {
-              Alert.alert(
-                "Poor Connection",
-                "Your connection quality is poor. Would you like to turn off video to improve call quality?",
-                [
-                  { text: "No", style: "cancel" },
-                  {
-                    text: "Yes",
-                    onPress: () => {
-                      toggleVideo()
-                    },
-                  },
-                ],
-              )
-            }
-          }
         }
       } catch (error) {
-        console.error("Error monitoring call quality:", error)
+        console.error("Error monitoring group call quality:", error)
       }
-    }, 10000) // Check every 10 seconds
+    }, 10000)
   }
 
-  // Process WebRTC stats
-  const processRTCStats = (stats) => {
+  // Process WebRTC stats (similar to CallScreen but with participant ID)
+  const processRTCStats = (stats, participantId) => {
+    // Same logic as CallScreen but include participantId
     let rtt = 0
     let jitter = 0
     let packetLoss = 0
@@ -740,7 +806,6 @@ const GroupCallScreen = () => {
     let frameRate = 0
     let frameWidth = 0
     let frameHeight = 0
-    const iceConnectionState = "unknown"
 
     stats.forEach((stat) => {
       if (stat.type === "inbound-rtp" && stat.kind === "video") {
@@ -752,323 +817,262 @@ const GroupCallScreen = () => {
       } else if (stat.type === "inbound-rtp" && stat.kind === "audio") {
         audioLevel = stat.audioLevel || 0
       } else if (stat.type === "candidate-pair" && stat.state === "succeeded") {
-        rtt = stat.currentRoundTripTime * 1000 || 0 // Convert to ms
+        rtt = stat.currentRoundTripTime * 1000 || 0
       }
     })
 
-    // Calculate quality scores (0-5 scale)
     const audioQualityScore = calculateAudioQualityScore(rtt, jitter, packetLoss)
-    const videoQualityScore = isVideo ? calculateVideoQualityScore(rtt, jitter, packetLoss, frameRate, videoBitrate) : 0
+    const videoQualityScore =
+      callType === "video" ? calculateVideoQualityScore(rtt, jitter, packetLoss, frameRate, videoBitrate) : 0
 
     return {
+      participantId,
       timestamp: new Date().toISOString(),
       rtt,
       jitter,
       packetLoss,
-      bitrate: {
-        audio: audioBitrate,
-        video: videoBitrate,
-      },
+      bitrate: { audio: audioBitrate, video: videoBitrate },
       audioLevel,
       frameRate,
-      resolution: {
-        width: frameWidth,
-        height: frameHeight,
-      },
-      iceConnectionState,
+      resolution: { width: frameWidth, height: frameHeight },
       connectionType: networkType,
-      qualityScore: {
-        audio: audioQualityScore,
-        video: videoQualityScore,
-      },
+      qualityScore: { audio: audioQualityScore, video: videoQualityScore },
     }
   }
 
-  // Calculate average metrics from all connections
-  const calculateAverageMetrics = (allStats) => {
-    if (Object.keys(allStats).length === 0) {
-      return {
-        qualityScore: { audio: 5, video: 5 },
-        rtt: 0,
-        jitter: 0,
-        packetLoss: 0,
-      }
-    }
+  // Calculate overall call quality from all participants
+  const calculateOverallQuality = (allMetrics) => {
+    if (allMetrics.length === 0) return "good"
 
-    let totalAudioScore = 0
-    let totalVideoScore = 0
-    let totalRtt = 0
-    let totalJitter = 0
-    let totalPacketLoss = 0
-    let count = 0
+    const avgAudioScore = allMetrics.reduce((sum, m) => sum + m.qualityScore.audio, 0) / allMetrics.length
+    const avgVideoScore =
+      callType === "video" ? allMetrics.reduce((sum, m) => sum + m.qualityScore.video, 0) / allMetrics.length : 5
 
-    for (const stats of Object.values(allStats)) {
-      if (stats.qualityScore) {
-        totalAudioScore += stats.qualityScore.audio || 0
-        totalVideoScore += stats.qualityScore.video || 0
-      }
-      totalRtt += stats.rtt || 0
-      totalJitter += stats.jitter || 0
-      totalPacketLoss += stats.packetLoss || 0
-      count++
-    }
+    const overallScore = Math.min(avgAudioScore, avgVideoScore)
 
-    return {
-      qualityScore: {
-        audio: totalAudioScore / count,
-        video: totalVideoScore / count,
-      },
-      rtt: totalRtt / count,
-      jitter: totalJitter / count,
-      packetLoss: totalPacketLoss / count,
-      connectionType: networkType,
-    }
+    if (overallScore >= 4) return "good"
+    if (overallScore >= 2) return "fair"
+    return "poor"
   }
 
-  // Calculate audio quality score (0-5 scale)
+  // Update participant quality UI
+  const updateParticipantQualityUI = (participantId, metrics) => {
+    const overallScore = Math.min(metrics.qualityScore.audio, callType === "video" ? metrics.qualityScore.video : 5)
+
+    let quality = "good"
+    if (overallScore >= 4) quality = "good"
+    else if (overallScore >= 2) quality = "fair"
+    else quality = "poor"
+
+    setParticipantStatus(
+      (prev) =>
+        new Map(
+          prev.set(participantId, {
+            ...prev.get(participantId),
+            quality,
+          }),
+        ),
+    )
+  }
+
+  // Audio quality score calculation (same as CallScreen)
   const calculateAudioQualityScore = (rtt, jitter, packetLoss) => {
-    // Simple scoring algorithm
     let score = 5
-
     if (rtt > 300) score -= 1
     if (rtt > 500) score -= 1
-
     if (jitter > 30) score -= 1
     if (jitter > 50) score -= 1
-
     if (packetLoss > 3) score -= 1
     if (packetLoss > 8) score -= 1
-
     return Math.max(0, score)
   }
 
-  // Calculate video quality score (0-5 scale)
+  // Video quality score calculation (same as CallScreen)
   const calculateVideoQualityScore = (rtt, jitter, packetLoss, frameRate, bitrate) => {
-    // Simple scoring algorithm
     let score = 5
-
     if (rtt > 200) score -= 1
     if (rtt > 400) score -= 1
-
     if (jitter > 20) score -= 1
     if (jitter > 40) score -= 1
-
     if (packetLoss > 2) score -= 1
     if (packetLoss > 5) score -= 1
-
     if (frameRate < 20) score -= 1
     if (frameRate < 10) score -= 1
-
     return Math.max(0, score)
   }
 
-  // Update call quality UI based on metrics
-  const updateCallQualityUI = (metrics) => {
-    if (!metrics.qualityScore) return
-
-    const overallScore = Math.min(metrics.qualityScore.audio, isVideo ? metrics.qualityScore.video : 5)
-
-    if (overallScore >= 4) {
-      setCallQuality("good")
-    } else if (overallScore >= 2) {
-      setCallQuality("fair")
-    } else {
-      setCallQuality("poor")
+  // Handle group call quality issues
+  const handleGroupCallQualityIssue = ({ callId: qualityCallId, participantId, issueType, metrics }) => {
+    if (callId === qualityCallId && callState === "ongoing") {
+      setParticipantStatus(
+        (prev) =>
+          new Map(
+            prev.set(participantId, {
+              ...prev.get(participantId),
+              quality: "poor",
+            }),
+          ),
+      )
+      console.log(`Call quality issue with ${participantId}:`, issueType, metrics)
     }
   }
 
-  // Leave call
-  const handleLeaveCall = async (reason = "user_left") => {
-    try {
-      // Prevent multiple call end attempts
-      if (isCallEndingRef.current) return
-      isCallEndingRef.current = true
-
-      // Stop timers
-      if (callTimerRef.current) {
-        clearInterval(callTimerRef.current)
-        callTimerRef.current = null
+  // Handle group network fallback
+  const handleGroupNetworkFallback = ({ callId: fallbackCallId, fallbackType }) => {
+    if (callId === fallbackCallId && callState === "ongoing") {
+      if (fallbackType === "audio_only" && callType === "video") {
+        Alert.alert("Network Issue", "Switching to audio only due to poor connection", [{ text: "OK" }])
+        setIsVideoEnabled(false)
       }
-
-      if (qualityMonitorRef.current) {
-        clearInterval(qualityMonitorRef.current)
-        qualityMonitorRef.current = null
-      }
-
-      if (activeGroupCallId) {
-        // Notify other participants via socket
-        if (socket && isConnected) {
-          socket.emit("group-call-user-left", {
-            groupCallId: activeGroupCallId,
-            userId: authState.user.id,
-          })
-        }
-
-        // Leave call in backend
-        await GroupCallAPI.leaveGroupCall(activeGroupCallId, {}, authState.token)
-
-        // If creator is ending the call, end it for everyone
-        if (isCreator && reason === "user_left") {
-          await GroupCallAPI.endGroupCall(activeGroupCallId, authState.token)
-        }
-
-        // Log call left event
-        await CallLogAPI.logCallEvent(authState.token, activeGroupCallId, "group", "call_left", {
-          duration: callDuration,
-          reason: reason,
-        })
-      }
-
-      // Clean up WebRTC
-      cleanupWebRTC()
-
-      // Update UI state
-      setCallState("ended")
-      setCallEndReason(reason)
-
-      // Navigate back after a short delay to show the ended state
-      setTimeout(() => {
-        navigation.goBack()
-      }, 1000)
-    } catch (error) {
-      console.error("Error leaving call:", error)
-      navigation.goBack()
     }
   }
 
-  // Clean up WebRTC resources
-  const cleanupWebRTC = () => {
-    // Stop all tracks in local stream
-    if (localStream) {
-      localStream.getTracks().forEach((track) => {
-        track.stop()
-      })
+  // Handle group ICE restart needed
+  const handleGroupIceRestartNeeded = async ({ callId: restartCallId, fromParticipant }) => {
+    if (callId === restartCallId && callState === "ongoing") {
+      await restartIceForParticipant(fromParticipant)
     }
-
-    // Close all peer connections
-    Object.values(peerConnectionsRef.current).forEach((pc) => {
-      if (pc) {
-        pc.close()
-      }
-    })
-    peerConnectionsRef.current = {}
-    remoteStreamsRef.current = {}
   }
 
-  // Clean up call resources
-  const cleanupCall = () => {
-    // Stop timers
-    if (callTimerRef.current) {
-      clearInterval(callTimerRef.current)
-    }
+  // Handle participant device change
+  const handleParticipantDeviceChange = ({ participantId, newActiveDevice }) => {
+    setParticipantDevices((prev) => new Map(prev.set(participantId, newActiveDevice)))
+  }
 
-    if (qualityMonitorRef.current) {
-      clearInterval(qualityMonitorRef.current)
-    }
+  // Handle participant status update
+  const handleParticipantStatusUpdate = ({ participantId, status }) => {
+    setParticipantStatus(
+      (prev) =>
+        new Map(
+          prev.set(participantId, {
+            ...prev.get(participantId),
+            status,
+          }),
+        ),
+    )
+  }
 
-    // Clean up WebRTC
-    cleanupWebRTC()
+  // Handle group call rejected
+  const handleGroupCallRejected = ({ callId: rejectedCallId, participantId }) => {
+    if (callId === rejectedCallId) {
+      // Remove participant from expected participants
+      setParticipants((prev) => prev.filter((p) => p._id !== participantId))
+
+      // If no participants left to answer, end call
+      const remainingParticipants = participants.filter((p) => p._id !== authState.user.id && p._id !== participantId)
+
+      if (remainingParticipants.length === 0) {
+        handleEndCall("all_rejected")
+      }
+    }
+  }
+
+  // Handle group call ended
+  const handleGroupCallEnded = ({ callId: endedCallId }) => {
+    if (callId === endedCallId) {
+      setCallEndReason("remote_ended")
+      handleEndCall("remote_ended")
+    }
   }
 
   // Toggle mute
   const toggleMute = async () => {
     try {
-      if (localStream) {
-        localStream.getAudioTracks().forEach((track) => {
-          track.enabled = isMuted
-        })
+      const newMuteState = !isMuted
+      const success = await AudioManager.setMicrophoneMute(newMuteState)
 
-        setIsMuted(!isMuted)
+      if (success) {
+        setIsMuted(newMuteState)
 
-        // Log mute toggle event
-        if (activeGroupCallId) {
-          await CallLogAPI.logCallEvent(authState.token, activeGroupCallId, "group", isMuted ? "unmuted" : "muted", {})
+        // Notify other participants
+        if (socket && isConnected && callId) {
+          socket.emit("participant-muted", {
+            callId,
+            participantId: authState.user.id,
+            isMuted: newMuteState,
+          })
+        }
+
+        // Log mute toggle
+        if (callId) {
+          await CallLogAPI.logCallEvent(authState.token, callId, "group", newMuteState ? "muted" : "unmuted", {})
         }
       }
     } catch (error) {
       console.error("Error toggling mute:", error)
+      Alert.alert("Audio Error", "Failed to toggle microphone. Please try again.")
     }
   }
 
   // Toggle speaker
   const toggleSpeaker = async () => {
     try {
-      // In a real implementation, you would use a native module to switch audio output
-      // For this example, we'll just update the state
-      setIsSpeakerOn(!isSpeakerOn)
-
-      // Log speaker toggle event
-      if (activeGroupCallId) {
-        await CallLogAPI.logCallEvent(
-          authState.token,
-          activeGroupCallId,
-          "group",
-          isSpeakerOn ? "speaker_off" : "speaker_on",
-          {},
-        )
+      const result = await AudioManager.toggleSpeaker()
+      if (result.success) {
+        setIsSpeakerOn(result.isSpeakerOn)
       }
     } catch (error) {
       console.error("Error toggling speaker:", error)
+      Alert.alert("Audio Error", "Failed to toggle speaker. Please try again.")
     }
   }
 
   // Toggle video
   const toggleVideo = async () => {
     try {
-      if (localStream) {
-        // If turning video on
+      if (localStreamRef.current) {
         if (!isVideoEnabled) {
-          // Get new stream with video
+          // Turn on video
           const newStream = await mediaDevices.getUserMedia({
             audio: true,
             video: {
-              facingMode: isFrontCamera ? "environment" : "user",
+              facingMode: isFrontCamera ? "user" : "environment",
               width: { ideal: 1280 },
               height: { ideal: 720 },
               frameRate: { ideal: 30 },
             },
           })
 
-          // Replace tracks in all peer connections
-          Object.values(peerConnectionsRef.current).forEach((pc) => {
+          // Replace video tracks in all peer connections
+          participantConnections.forEach((pc, participantId) => {
             if (pc) {
               const senders = pc.getSenders()
               const videoTrack = newStream.getVideoTracks()[0]
-
-              // Find video sender and replace track
               const videoSender = senders.find((sender) => sender.track && sender.track.kind === "video")
 
               if (videoSender) {
                 videoSender.replaceTrack(videoTrack)
               } else {
-                // Add video track if not already present
                 pc.addTrack(videoTrack, newStream)
               }
             }
           })
 
-          // Keep audio tracks from current stream
-          const audioTracks = localStream.getAudioTracks()
-          audioTracks.forEach((track) => {
-            newStream.addTrack(track)
-          })
-
-          // Update local stream
           setLocalStream(newStream)
+          localStreamRef.current = newStream
         } else {
-          // Turn off video tracks
-          localStream.getVideoTracks().forEach((track) => {
+          // Turn off video
+          localStreamRef.current.getVideoTracks().forEach((track) => {
             track.enabled = false
           })
         }
 
         setIsVideoEnabled(!isVideoEnabled)
 
-        // Log video toggle event
-        if (activeGroupCallId) {
+        // Notify other participants
+        if (socket && isConnected && callId) {
+          socket.emit("participant-video-toggled", {
+            callId,
+            participantId: authState.user.id,
+            isVideoEnabled: !isVideoEnabled,
+          })
+        }
+
+        // Log video toggle
+        if (callId) {
           await CallLogAPI.logCallEvent(
             authState.token,
-            activeGroupCallId,
+            callId,
             "group",
             isVideoEnabled ? "video_disabled" : "video_enabled",
             {},
@@ -1084,11 +1088,9 @@ const GroupCallScreen = () => {
   // Toggle camera (front/back)
   const toggleCamera = async () => {
     try {
-      if (localStream && isVideoEnabled) {
+      if (localStreamRef.current && isVideoEnabled) {
         // Stop current video track
-        localStream.getVideoTracks().forEach((track) => {
-          track.stop()
-        })
+        localStreamRef.current.getVideoTracks().forEach((track) => track.stop())
 
         // Get new video track with different camera
         const newStream = await mediaDevices.getUserMedia({
@@ -1102,41 +1104,27 @@ const GroupCallScreen = () => {
         })
 
         // Replace video track in all peer connections
-        Object.values(peerConnectionsRef.current).forEach((pc) => {
+        participantConnections.forEach((pc, participantId) => {
           if (pc) {
             const senders = pc.getSenders()
             const videoTrack = newStream.getVideoTracks()[0]
-
             const videoSender = senders.find((sender) => sender.track && sender.track.kind === "video")
-
             if (videoSender) {
               videoSender.replaceTrack(videoTrack)
             }
           }
         })
 
-        // Update local stream by replacing video track
+        // Update local stream
         const newVideoTrack = newStream.getVideoTracks()[0]
-        const audioTracks = localStream.getAudioTracks()
-
-        // Create a new stream with existing audio and new video
+        const audioTracks = localStreamRef.current.getAudioTracks()
         const combinedStream = new MediaStream()
         audioTracks.forEach((track) => combinedStream.addTrack(track))
         combinedStream.addTrack(newVideoTrack)
 
         setLocalStream(combinedStream)
+        localStreamRef.current = combinedStream
         setIsFrontCamera(!isFrontCamera)
-
-        // Log camera toggle event
-        if (activeGroupCallId) {
-          await CallLogAPI.logCallEvent(
-            authState.token,
-            activeGroupCallId,
-            "group",
-            isFrontCamera ? "camera_switched_to_back" : "camera_switched_to_front",
-            {},
-          )
-        }
       }
     } catch (error) {
       console.error("Error toggling camera:", error)
@@ -1144,29 +1132,244 @@ const GroupCallScreen = () => {
     }
   }
 
-  // Toggle screen sharing
-  const toggleScreenSharing = async () => {
+  // Answer incoming group call
+  const answerGroupCall = async () => {
     try {
-      // In a real implementation, you would use a native module to capture screen
-      // For this example, we'll just update the state
-      const newSharingState = !isScreenSharing
-      setIsScreenSharing(newSharingState)
+      setCallState("connecting")
 
-      // Update backend
-      await GroupCallAPI.toggleScreenSharing(activeGroupCallId, { isSharing: newSharingState }, authState.token)
+      // Create peer connections for all participants
+      for (const participant of participants) {
+        if (participant._id !== authState.user.id) {
+          await createPeerConnectionForParticipant(participant._id)
+        }
+      }
 
-      // Log screen sharing event
-      await CallLogAPI.logCallEvent(
-        authState.token,
-        activeGroupCallId,
-        "group",
-        newSharingState ? "screen_sharing_started" : "screen_sharing_stopped",
-        {},
-      )
+      // Send answer via socket
+      // if (socket && isConnected) {
+      //   socket.emit('group-call-answer', {
+      //     callId,
+      //     participantId: authState.user.id,
+      //     conversationId,
+      //   });
+      // }
+
+      await GroupCallAPI.updateCallStatus(callId, { status: "active", targetUserId: authState.user.id })
+      // Note: The new API uses 'active' for ongoing. 'targetUserId' might be relevant if updating a specific participant's status upon answering.
+
+      setCallState("ongoing")
+      setCallStartTime(new Date())
+      await AudioManager.stopRingtone()
+
+      // Start call timer
+      callTimerRef.current = setInterval(() => {
+        setCallDuration((prev) => prev + 1)
+      }, 1000)
+
+      // Start quality monitoring
+      startQualityMonitoring()
+
+      // Update call status
+      // await CallAPI.updateCallStatus(authState.token, callId, 'ongoing');
+
+      // Log call answered
+      await CallLogAPI.logCallEvent(authState.token, callId, "group", "call_answered", {})
     } catch (error) {
-      console.error("Error toggling screen sharing:", error)
-      Alert.alert("Error", "Failed to toggle screen sharing. Please try again.")
+      console.error("Error answering group call:", error)
+      handleEndCall("answer_failed")
     }
+  }
+
+  // Reject incoming group call
+  const rejectGroupCall = async () => {
+    try {
+      // Send rejection via socket
+      if (socket && isConnected) {
+        socket.emit("group-call-reject", {
+          callId,
+          participantId: authState.user.id,
+          conversationId,
+        })
+      }
+
+      await AudioManager.stopRingtone()
+      await GroupCallAPI.updateCallStatus(callId, { status: "rejected", targetUserId: authState.user.id })
+      // await CallAPI.updateCallStatus(authState.token, callId, 'rejected');
+
+      // Log call rejected
+      await CallLogAPI.logCallEvent(authState.token, callId, "group", "call_rejected", {})
+
+      navigation.goBack()
+    } catch (error) {
+      console.error("Error rejecting group call:", error)
+      navigation.goBack()
+    }
+  }
+
+  // Add participant to ongoing call
+  const addParticipant = async (newParticipant) => {
+    try {
+      if (callState === "ongoing" && socket && isConnected) {
+        // Check new participant's status
+        socket.emit("check-user-status", { userId: newParticipant._id })
+
+        // Add to participants list
+        setParticipants((prev) => [...prev, newParticipant])
+
+        // Send invitation
+        socket.emit("group-call-invite", {
+          callId,
+          conversationId,
+          invitedParticipant: newParticipant,
+          inviterInfo: {
+            id: authState.user.id,
+            name: authState.user.name,
+          },
+        })
+
+        // Log participant added
+        await CallLogAPI.logCallEvent(authState.token, callId, "group", "participant_added", {
+          addedParticipant: newParticipant._id,
+          addedBy: authState.user.id,
+        })
+      }
+    } catch (error) {
+      console.error("Error adding participant:", error)
+      Alert.alert("Error", "Failed to add participant to the call.")
+    }
+  }
+
+  // Remove participant from call (admin only)
+  const removeParticipant = async (participantId) => {
+    try {
+      if (callState === "ongoing" && socket && isConnected) {
+        // Send removal notification
+        socket.emit("group-call-remove-participant", {
+          callId,
+          conversationId,
+          removedParticipantId: participantId,
+          removedBy: authState.user.id,
+        })
+
+        // Remove from local state
+        handleParticipantLeft({ callId, participantId })
+
+        // Log participant removed
+        await CallLogAPI.logCallEvent(authState.token, callId, "group", "participant_removed", {
+          removedParticipant: participantId,
+          removedBy: authState.user.id,
+        })
+      }
+    } catch (error) {
+      console.error("Error removing participant:", error)
+      Alert.alert("Error", "Failed to remove participant from the call.")
+    }
+  }
+
+  // Handle end call
+  const handleEndCall = async (reason = "user_ended") => {
+    try {
+      if (isCallEndingRef.current) return
+      isCallEndingRef.current = true
+
+      // Stop timers
+      if (callTimerRef.current) {
+        clearInterval(callTimerRef.current)
+        callTimerRef.current = null
+      }
+      if (qualityMonitorRef.current) {
+        clearInterval(qualityMonitorRef.current)
+        qualityMonitorRef.current = null
+      }
+
+      // Determine call status
+      let callStatus = "completed"
+      if (callState === "connecting" || callState === "ringing" || callState === "calling") {
+        callStatus = isIncoming ? "rejected" : "missed"
+      } else if (reason === "error" || reason === "setup_failed" || reason === "initiate_failed") {
+        callStatus = "failed"
+      }
+
+      // Update call status and notify participants
+      if (callId) {
+        // if (socket && isConnected && callState !== 'ended') {
+        //   socket.emit('end-group-call', { // This might be redundant if API call handles it
+        //     callId,
+        //     conversationId,
+        //     endedBy: authState.user.id,
+        //   });
+        // }
+
+        // await CallAPI.updateCallStatus(authState.token, callId, callStatus, new Date().toISOString());
+        if (reason === "user_ended") {
+          // This is a simplification. You might need to know if the current user is the initiator
+          // to decide between endGroupCall (for initiator) and leaveGroupCall (for participant).
+          // Let's assume for now 'user_ended' means the current user is leaving.
+          // If they are the last one, the backend might auto-end it.
+          // Or, if you have a specific "End Call for All" button for initiators, that would call endGroupCall.
+          const endResponse = await GroupCallAPI.leaveGroupCall(callId)
+          if (!endResponse.success) {
+            console.warn("Failed to leave group call via API:", endResponse.message)
+          }
+        } else if (callStatus === "missed" || callStatus === "rejected" || callStatus === "failed") {
+          // Update status for specific failure reasons if not a direct leave/end action
+          await GroupCallAPI.updateCallStatus(callId, {
+            status: callStatus, // 'missed', 'rejected', 'failed'
+            reason: reason,
+            endTime: new Date().toISOString(),
+            targetUserId: authState.user.id, // Status update for this user
+          })
+        }
+        // If 'remote_ended' or 'all_participants_left', the call is already ended by others,
+        // so a client-side API call to end/leave might be redundant or could even error if the call record is gone.
+        // The backend should handle the primary status update in those cases.
+
+        // Log call ended
+        await CallLogAPI.logCallEvent(authState.token, callId, "group", "call_ended", {
+          duration: callDuration,
+          reason,
+          participantCount: activeParticipants.size + 1,
+        })
+      }
+
+      // Clean up WebRTC
+      cleanupWebRTC()
+
+      setCallState("ended")
+      setCallEndReason(reason)
+
+      setTimeout(() => {
+        navigation.goBack()
+      }, 1000)
+    } catch (error) {
+      console.error("Error ending group call:", error)
+      navigation.goBack()
+    }
+  }
+
+  // Clean up WebRTC resources
+  const cleanupWebRTC = () => {
+    // Stop local stream
+    if (localStreamRef.current) {
+      localStreamRef.current.getTracks().forEach((track) => track.stop())
+    }
+
+    // Close all peer connections
+    participantConnections.forEach((pc, participantId) => {
+      if (pc) {
+        pc.close()
+      }
+    })
+
+    setParticipantConnections(new Map())
+    setParticipantStreams(new Map())
+  }
+
+  // Clean up call resources
+  const cleanupCall = () => {
+    if (callTimerRef.current) clearInterval(callTimerRef.current)
+    if (qualityMonitorRef.current) clearInterval(qualityMonitorRef.current)
+    AudioManager.cleanup()
+    cleanupWebRTC()
   }
 
   // Format call duration
@@ -1178,7 +1381,6 @@ const GroupCallScreen = () => {
     if (hrs > 0) {
       return `${hrs}:${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`
     }
-
     return `${mins}:${secs.toString().padStart(2, "0")}`
   }
 
@@ -1189,78 +1391,233 @@ const GroupCallScreen = () => {
         return "Initializing..."
       case "connecting":
         return "Connecting..."
+      case "calling":
+        return "Calling..."
+      case "ringing":
+        return isIncoming ? "Incoming group call..." : "Ringing..."
       case "ongoing":
         if (isReconnecting) return "Reconnecting..."
         return formatDuration(callDuration)
       case "ended":
-        if (callEndReason === "create_failed") return "Failed to create call"
-        if (callEndReason === "join_failed") return "Failed to join call"
+        if (callEndReason === "rejected") return "Call rejected"
+        if (callEndReason === "remote_ended") return "Call ended"
+        if (callEndReason === "no_answer") return "No answer"
+        if (callEndReason === "all_participants_left") return "All participants left"
         return "Call ended"
       default:
         return ""
     }
   }
 
-  // Get quality indicator color
-  const getQualityColor = () => {
-    switch (callQuality) {
-      case "good":
-        return "#4CAF50"
-      case "fair":
-        return "#FFC107"
-      case "poor":
-        return "#F44336"
-      default:
-        return "#4CAF50"
-    }
+  // Calculate grid layout
+  const calculateGridLayout = () => {
+    const totalParticipants = activeParticipants.size + 1 // +1 for local user
+
+    if (totalParticipants <= 1) return { rows: 1, cols: 1 }
+    if (totalParticipants <= 2) return { rows: 1, cols: 2 }
+    if (totalParticipants <= 4) return { rows: 2, cols: 2 }
+    if (totalParticipants <= 6) return { rows: 2, cols: 3 }
+    if (totalParticipants <= 9) return { rows: 3, cols: 3 }
+    return { rows: 4, cols: 3 } // Max 12 participants visible
   }
 
-  // Render participant item
-  const renderParticipantItem = ({ item }) => {
-    const isCurrentUser = item._id === authState.user.id
-    const hasStream = remoteStreamsRef.current[item._id] !== undefined
+  // Render participant video
+  const renderParticipantVideo = (participantId, participant, index) => {
+    const stream = participantStreams.get(participantId)
+    const status = participantStatus.get(participantId) || {}
+    const { rows, cols } = calculateGridLayout()
+
+    const videoWidth = width / cols
+    const videoHeight = (height - 200) / rows // Adjust for controls
 
     return (
-      <View style={styles.participantItem}>
-        {isVideo && hasStream && !isCurrentUser ? (
-          <RTCView
-            streamURL={remoteStreamsRef.current[item._id].toURL()}
-            style={styles.participantVideo}
-            objectFit="cover"
-          />
+      <TouchableOpacity
+        key={participantId}
+        style={[
+          styles.participantVideo,
+          {
+            width: videoWidth,
+            height: videoHeight,
+            backgroundColor: "#333333",
+          },
+        ]}
+        onPress={() => setSelectedParticipant(selectedParticipant === participantId ? null : participantId)}
+      >
+        {stream && status.videoEnabled ? (
+          <RTCView streamURL={stream.toURL()} style={styles.videoStream} objectFit="cover" />
         ) : (
           <View style={styles.participantPlaceholder}>
-            {item.profilePicture ? (
+            {participant.profilePicture ? (
               <Image
-                source={{ uri: `${API_BASE_URL_FOR_MEDIA}${item.profilePicture}` }}
-                style={styles.participantImage}
+                source={{ uri: `${API_BASE_URL_FOR_MEDIA}${participant.profilePicture}` }}
+                style={styles.participantAvatar}
               />
             ) : (
-              <View style={styles.defaultParticipantImage}>
-                <Text style={styles.defaultImageText}>{item.name.charAt(0).toUpperCase()}</Text>
+              <View style={styles.defaultParticipantAvatar}>
+                <Text style={styles.defaultAvatarText}>{participant.name?.charAt(0).toUpperCase()}</Text>
               </View>
             )}
           </View>
         )}
 
-        <Text style={styles.participantName}>
-          {item.name} {isCurrentUser ? "(You)" : ""}
-        </Text>
+        {/* Participant info overlay */}
+        <View style={styles.participantOverlay}>
+          <Text style={styles.participantName} numberOfLines={1}>
+            {participant.name}
+          </Text>
 
-        {item.isSharingScreen && (
-          <View style={styles.sharingIndicator}>
-            <Ionicons name="desktop-outline" size={12} color="#FFFFFF" />
-          </View>
-        )}
+          {/* Status indicators */}
+          <View style={styles.participantIndicators}>
+            {status.muted && (
+              <View style={styles.mutedIndicator}>
+                <Ionicons name="mic-off" size={12} color="#FFFFFF" />
+              </View>
+            )}
 
-        {!item.isActive && (
-          <View style={styles.inactiveOverlay}>
-            <Text style={styles.inactiveText}>Left</Text>
+            {status.quality && (
+              <View
+                style={[
+                  styles.qualityIndicator,
+                  {
+                    backgroundColor:
+                      status.quality === "good" ? "#4CAF50" : status.quality === "fair" ? "#FFC107" : "#F44336",
+                  },
+                ]}
+              />
+            )}
           </View>
-        )}
-      </View>
+        </View>
+      </TouchableOpacity>
     )
   }
+
+  // Render local video
+  const renderLocalVideo = () => {
+    const { rows, cols } = calculateGridLayout()
+    const videoWidth = width / cols
+    const videoHeight = (height - 200) / rows
+
+    return (
+      <TouchableOpacity
+        style={[
+          styles.participantVideo,
+          {
+            width: videoWidth,
+            height: videoHeight,
+            backgroundColor: "#333333",
+          },
+        ]}
+        onPress={() => setSelectedParticipant(selectedParticipant === "local" ? null : "local")}
+      >
+        {localStream && isVideoEnabled ? (
+          <RTCView streamURL={localStream.toURL()} style={styles.videoStream} objectFit="cover" zOrder={1} />
+        ) : (
+          <View style={styles.participantPlaceholder}>
+            {authState.user.profilePicture ? (
+              <Image
+                source={{ uri: `${API_BASE_URL_FOR_MEDIA}${authState.user.profilePicture}` }}
+                style={styles.participantAvatar}
+              />
+            ) : (
+              <View style={styles.defaultParticipantAvatar}>
+                <Text style={styles.defaultAvatarText}>{authState.user.name?.charAt(0).toUpperCase()}</Text>
+              </View>
+            )}
+          </View>
+        )}
+
+        {/* Local user overlay */}
+        <View style={styles.participantOverlay}>
+          <Text style={styles.participantName} numberOfLines={1}>
+            You
+          </Text>
+
+          <View style={styles.participantIndicators}>
+            {isMuted && (
+              <View style={styles.mutedIndicator}>
+                <Ionicons name="mic-off" size={12} color="#FFFFFF" />
+              </View>
+            )}
+          </View>
+        </View>
+      </TouchableOpacity>
+    )
+  }
+
+  // Render participants list modal
+  const renderParticipantsList = () => (
+    <Modal
+      visible={showParticipantsList}
+      animationType="slide"
+      transparent={true}
+      onRequestClose={() => setShowParticipantsList(false)}
+    >
+      <View style={styles.modalOverlay}>
+        <View style={[styles.modalContent, { backgroundColor: currentTheme.card }]}>
+          <View style={styles.modalHeader}>
+            <Text style={[styles.modalTitle, { color: currentTheme.text }]}>
+              Participants ({activeParticipants.size + 1})
+            </Text>
+            <TouchableOpacity onPress={() => setShowParticipantsList(false)}>
+              <Ionicons name="close" size={24} color={currentTheme.text} />
+            </TouchableOpacity>
+          </View>
+
+          <FlatList
+            data={[{ _id: authState.user.id, name: "You", isLocal: true }, ...Array.from(activeParticipants.values())]}
+            keyExtractor={(item) => item._id}
+            renderItem={({ item }) => (
+              <View style={styles.participantListItem}>
+                <Image
+                  source={
+                    item.profilePicture
+                      ? { uri: `${API_BASE_URL_FOR_MEDIA}${item.profilePicture}` }
+                      : require("../../assets/images/default-avatar.png")
+                  }
+                  style={styles.participantListAvatar}
+                />
+                <View style={styles.participantListInfo}>
+                  <Text style={[styles.participantListName, { color: currentTheme.text }]}>{item.name}</Text>
+                  <Text style={[styles.participantListStatus, { color: currentTheme.placeholder }]}>
+                    {item.isLocal ? "You" : "Connected"}
+                  </Text>
+                </View>
+
+                {!item.isLocal && (
+                  <TouchableOpacity
+                    style={styles.removeParticipantButton}
+                    onPress={() => {
+                      Alert.alert("Remove Participant", `Remove ${item.name} from the call?`, [
+                        { text: "Cancel", style: "cancel" },
+                        {
+                          text: "Remove",
+                          style: "destructive",
+                          onPress: () => removeParticipant(item._id),
+                        },
+                      ])
+                    }}
+                  >
+                    <Ionicons name="remove-circle" size={20} color="#F44336" />
+                  </TouchableOpacity>
+                )}
+              </View>
+            )}
+          />
+
+          <TouchableOpacity
+            style={[styles.addParticipantButton, { backgroundColor: currentTheme.primary }]}
+            onPress={() => {
+              setShowParticipantsList(false)
+              setShowAddParticipants(true)
+            }}
+          >
+            <Ionicons name="person-add" size={20} color="#FFFFFF" />
+            <Text style={styles.addParticipantText}>Add Participant</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </Modal>
+  )
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: "#000000" }]}>
@@ -1272,72 +1629,152 @@ const GroupCallScreen = () => {
           style={styles.minimizeButton}
           onPress={() => {
             if (callState === "ongoing") {
-              // Show confirmation dialog before leaving ongoing call
-              Alert.alert("Leave Call", "Are you sure you want to leave this call?", [
+              Alert.alert("End Call", "Are you sure you want to end this group call?", [
                 { text: "Cancel", style: "cancel" },
-                { text: "Leave", style: "destructive", onPress: () => handleLeaveCall("user_left") },
+                {
+                  text: "End Call",
+                  style: "destructive",
+                  onPress: () => handleEndCall("user_ended"),
+                },
               ])
             } else {
-              handleLeaveCall("user_left")
+              handleEndCall("user_ended")
             }
           }}
         >
           <Ionicons name="chevron-down" size={28} color="#FFFFFF" />
         </TouchableOpacity>
 
-        <Text style={styles.callTitle}>{conversation.groupName || "Group Call"}</Text>
+        <View style={styles.callInfo}>
+          <Text style={styles.conversationName}>{conversationName}</Text>
+          <Text style={styles.callStatusText}>{getCallStatusText()}</Text>
+        </View>
 
-        {callState === "ongoing" && (
-          <View style={styles.callQualityContainer}>
-            <View style={[styles.qualityIndicator, { backgroundColor: getQualityColor() }]} />
-            {isReconnecting && <Text style={styles.reconnectingText}>Reconnecting...</Text>}
-          </View>
-        )}
+        <TouchableOpacity style={styles.participantsButton} onPress={() => setShowParticipantsList(true)}>
+          <Ionicons name="people" size={24} color="#FFFFFF" />
+          <Text style={styles.participantCount}>{activeParticipants.size + 1}</Text>
+        </TouchableOpacity>
       </View>
 
-      {/* Call Content */}
-      <View style={styles.callContent}>
-        {callState === "connecting" ? (
-          <View style={styles.connectingContainer}>
-            <ActivityIndicator size="large" color="#FFFFFF" />
-            <Text style={styles.connectingText}>{isJoining ? "Joining call..." : "Starting call..."}</Text>
-          </View>
-        ) : callState === "ongoing" ? (
-          <View style={styles.participantsContainer}>
-            <Text style={styles.callStatus}>{getCallStatusText()}</Text>
+      {/* Video Grid or Audio Call View */}
+      {callType === "video" && callState === "ongoing" ? (
+        <View style={styles.videoGrid}>
+          {selectedParticipant ? (
+            // Full-screen view of selected participant
+            <View style={styles.fullScreenVideo}>
+              {selectedParticipant === "local" ? (
+                localStream && isVideoEnabled ? (
+                  <RTCView streamURL={localStream.toURL()} style={styles.fullScreenVideoStream} objectFit="cover" />
+                ) : (
+                  <View style={styles.fullScreenPlaceholder}>
+                    <Text style={styles.fullScreenName}>You</Text>
+                  </View>
+                )
+              ) : (
+                (() => {
+                  const stream = participantStreams.get(selectedParticipant)
+                  const participant = activeParticipants.get(selectedParticipant)
+                  const status = participantStatus.get(selectedParticipant) || {}
 
-            <FlatList
-              data={participants.filter((p) => p.isActive)}
-              renderItem={renderParticipantItem}
-              keyExtractor={(item) => item._id}
-              numColumns={2}
-              contentContainerStyle={styles.participantsList}
-            />
+                  return stream && status.videoEnabled ? (
+                    <RTCView streamURL={stream.toURL()} style={styles.fullScreenVideoStream} objectFit="cover" />
+                  ) : (
+                    <View style={styles.fullScreenPlaceholder}>
+                      <Text style={styles.fullScreenName}>{participant?.name}</Text>
+                    </View>
+                  )
+                })()
+              )}
 
-            {/* Local video preview */}
-            {isVideo && isVideoEnabled && localStream && (
-              <View style={styles.localVideoContainer}>
-                <RTCView streamURL={localStream.toURL()} style={styles.localVideo} objectFit="cover" zOrder={1} />
+              {/* Thumbnail grid at bottom */}
+              <View style={styles.thumbnailGrid}>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                  {renderLocalVideo()}
+                  {Array.from(activeParticipants.entries()).map(([participantId, participant], index) =>
+                    participantId !== selectedParticipant
+                      ? renderParticipantVideo(participantId, participant, index)
+                      : null,
+                  )}
+                </ScrollView>
               </View>
-            )}
+            </View>
+          ) : (
+            // Grid view of all participants
+            <ScrollView contentContainerStyle={styles.gridContainer}>
+              {renderLocalVideo()}
+              {Array.from(activeParticipants.entries()).map(([participantId, participant], index) =>
+                renderParticipantVideo(participantId, participant, index),
+              )}
+            </ScrollView>
+          )}
+        </View>
+      ) : (
+        // Audio call view
+        <View style={styles.audioCallContainer}>
+          <Text style={styles.conversationNameLarge}>{conversationName}</Text>
+          <Text style={styles.callStatusLarge}>{getCallStatusText()}</Text>
+
+          {/* Participants avatars in audio call */}
+          <View style={styles.audioParticipantsContainer}>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+              {/* Local user */}
+              <View style={styles.audioParticipant}>
+                {authState.user.profilePicture ? (
+                  <Image
+                    source={{ uri: `${API_BASE_URL_FOR_MEDIA}${authState.user.profilePicture}` }}
+                    style={styles.audioParticipantAvatar}
+                  />
+                ) : (
+                  <View style={styles.defaultAudioAvatar}>
+                    <Text style={styles.defaultAudioAvatarText}>{authState.user.name?.charAt(0).toUpperCase()}</Text>
+                  </View>
+                )}
+                <Text style={styles.audioParticipantName}>You</Text>
+                {isMuted && (
+                  <View style={styles.audioMutedIndicator}>
+                    <Ionicons name="mic-off" size={16} color="#FFFFFF" />
+                  </View>
+                )}
+              </View>
+
+              {/* Other participants */}
+              {Array.from(activeParticipants.entries()).map(([participantId, participant]) => {
+                const status = participantStatus.get(participantId) || {}
+                return (
+                  <View key={participantId} style={styles.audioParticipant}>
+                    {participant.profilePicture ? (
+                      <Image
+                        source={{ uri: `${API_BASE_URL_FOR_MEDIA}${participant.profilePicture}` }}
+                        style={styles.audioParticipantAvatar}
+                      />
+                    ) : (
+                      <View style={styles.defaultAudioAvatar}>
+                        <Text style={styles.defaultAudioAvatarText}>{participant.name?.charAt(0).toUpperCase()}</Text>
+                      </View>
+                    )}
+                    <Text style={styles.audioParticipantName}>{participant.name}</Text>
+                    {status.muted && (
+                      <View style={styles.audioMutedIndicator}>
+                        <Ionicons name="mic-off" size={16} color="#FFFFFF" />
+                      </View>
+                    )}
+                  </View>
+                )
+              })}
+            </ScrollView>
           </View>
-        ) : (
-          <View style={styles.endedContainer}>
-            <Ionicons name="call" size={50} color="#FFFFFF" style={{ transform: [{ rotate: "135deg" }] }} />
-            <Text style={styles.endedText}>{getCallStatusText()}</Text>
-          </View>
-        )}
-      </View>
+        </View>
+      )}
 
       {/* Call Controls */}
-      {callState === "ongoing" && (
+      {callState === "ongoing" ? (
         <View style={styles.callControls}>
           <TouchableOpacity style={[styles.controlButton, isMuted && styles.activeControlButton]} onPress={toggleMute}>
             <Ionicons name={isMuted ? "mic-off" : "mic"} size={24} color="#FFFFFF" />
             <Text style={styles.controlText}>Mute</Text>
           </TouchableOpacity>
 
-          {isVideo && (
+          {callType === "video" && (
             <TouchableOpacity
               style={[styles.controlButton, !isVideoEnabled && styles.activeControlButton]}
               onPress={toggleVideo}
@@ -1350,36 +1787,62 @@ const GroupCallScreen = () => {
           <TouchableOpacity
             style={[styles.controlButton, isSpeakerOn && styles.activeControlButton]}
             onPress={toggleSpeaker}
+            onLongPress={() => setShowAudioRouteSelector(true)}
           >
             <Ionicons name={isSpeakerOn ? "volume-high" : "volume-medium"} size={24} color="#FFFFFF" />
             <Text style={styles.controlText}>Speaker</Text>
           </TouchableOpacity>
 
-          {isVideo && isVideoEnabled && (
+          {callType === "video" && isVideoEnabled && (
             <TouchableOpacity style={styles.controlButton} onPress={toggleCamera}>
               <Ionicons name="camera-reverse" size={24} color="#FFFFFF" />
               <Text style={styles.controlText}>Flip</Text>
             </TouchableOpacity>
           )}
 
-          <TouchableOpacity
-            style={[styles.controlButton, isScreenSharing && styles.activeControlButton]}
-            onPress={toggleScreenSharing}
-          >
-            <Ionicons name="desktop-outline" size={24} color="#FFFFFF" />
-            <Text style={styles.controlText}>Share</Text>
+          <TouchableOpacity style={styles.controlButton} onPress={() => setShowAddParticipants(true)}>
+            <Ionicons name="person-add" size={24} color="#FFFFFF" />
+            <Text style={styles.controlText}>Add</Text>
           </TouchableOpacity>
         </View>
-      )}
+      ) : isIncoming && callState === "ringing" ? (
+        // Incoming group call controls
+        <View style={styles.incomingCallControls}>
+          <TouchableOpacity style={[styles.incomingCallButton, styles.rejectButton]} onPress={rejectGroupCall}>
+            <Ionicons name="call" size={30} color="#FFFFFF" style={{ transform: [{ rotate: "135deg" }] }} />
+            <Text style={styles.incomingButtonText}>Decline</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity style={[styles.incomingCallButton, styles.acceptButton]} onPress={answerGroupCall}>
+            <Ionicons name="call" size={30} color="#FFFFFF" />
+            <Text style={styles.incomingButtonText}>Join</Text>
+          </TouchableOpacity>
+        </View>
+      ) : null}
 
       {/* End Call Button */}
-      {callState === "ongoing" && (
+      {(callState === "ongoing" || ((callState === "ringing" || callState === "calling") && !isIncoming)) && (
         <View style={styles.endCallContainer}>
-          <TouchableOpacity style={styles.endCallButton} onPress={() => handleLeaveCall("user_left")}>
+          <TouchableOpacity style={styles.endCallButton} onPress={() => handleEndCall("user_ended")}>
             <Ionicons name="call" size={30} color="#FFFFFF" style={{ transform: [{ rotate: "135deg" }] }} />
           </TouchableOpacity>
         </View>
       )}
+
+      {/* Participants List Modal */}
+      {renderParticipantsList()}
+
+      {/* Audio Route Selector Modal */}
+      <AudioRouteSelector
+        visible={showAudioRouteSelector}
+        onClose={() => setShowAudioRouteSelector(false)}
+        onRouteSelected={(route) => {
+          setIsSpeakerOn(route === "speaker")
+          if (callId) {
+            CallLogAPI.logCallEvent(authState.token, callId, "group", "audio_route_changed", { newRoute: route })
+          }
+        }}
+      />
     </SafeAreaView>
   )
 }
@@ -1400,61 +1863,49 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
-  callTitle: {
+  callInfo: {
+    flex: 1,
+    alignItems: "center",
+  },
+  conversationName: {
     color: "#FFFFFF",
     fontSize: 18,
     fontWeight: "bold",
   },
-  callQualityContainer: {
+  callStatusText: {
+    color: "#CCCCCC",
+    fontSize: 14,
+    marginTop: 2,
+  },
+  participantsButton: {
     flexDirection: "row",
     alignItems: "center",
+    backgroundColor: "rgba(255, 255, 255, 0.2)",
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 20,
   },
-  qualityIndicator: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    marginRight: 5,
-  },
-  reconnectingText: {
-    color: "#FFC107",
-    fontSize: 12,
-  },
-  callContent: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  connectingContainer: {
-    alignItems: "center",
-  },
-  connectingText: {
+  participantCount: {
     color: "#FFFFFF",
-    fontSize: 18,
-    marginTop: 20,
+    marginLeft: 5,
+    fontSize: 14,
+    fontWeight: "bold",
   },
-  participantsContainer: {
+  videoGrid: {
     flex: 1,
-    width: "100%",
-    alignItems: "center",
   },
-  callStatus: {
-    color: "#FFFFFF",
-    fontSize: 16,
-    marginVertical: 10,
-  },
-  participantsList: {
-    paddingHorizontal: 10,
-  },
-  participantItem: {
-    width: width / 2 - 20,
-    height: 200,
-    margin: 5,
-    borderRadius: 10,
-    overflow: "hidden",
-    backgroundColor: "#333333",
-    position: "relative",
+  gridContainer: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    padding: 5,
   },
   participantVideo: {
+    margin: 2,
+    borderRadius: 8,
+    overflow: "hidden",
+    position: "relative",
+  },
+  videoStream: {
     width: "100%",
     height: "100%",
   },
@@ -1463,86 +1914,161 @@ const styles = StyleSheet.create({
     height: "100%",
     justifyContent: "center",
     alignItems: "center",
+    backgroundColor: "#333333",
   },
-  participantImage: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
+  participantAvatar: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
   },
-  defaultParticipantImage: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
+  defaultParticipantAvatar: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
     backgroundColor: "#128C7E",
     justifyContent: "center",
     alignItems: "center",
   },
-  defaultImageText: {
+  defaultAvatarText: {
     color: "#FFFFFF",
-    fontSize: 30,
+    fontSize: 24,
     fontWeight: "bold",
+  },
+  participantOverlay: {
+    position: "absolute",
+    bottom: 8,
+    left: 8,
+    right: 8,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
   },
   participantName: {
-    position: "absolute",
-    bottom: 10,
-    left: 10,
     color: "#FFFFFF",
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: "bold",
-    textShadowColor: "rgba(0, 0, 0, 0.75)",
-    textShadowOffset: { width: 1, height: 1 },
-    textShadowRadius: 2,
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    flex: 1,
   },
-  sharingIndicator: {
-    position: "absolute",
-    top: 10,
-    right: 10,
-    backgroundColor: "#128C7E",
-    borderRadius: 12,
-    padding: 5,
-  },
-  inactiveOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(0, 0, 0, 0.7)",
-    justifyContent: "center",
+  participantIndicators: {
+    flexDirection: "row",
     alignItems: "center",
   },
-  inactiveText: {
-    color: "#FFFFFF",
-    fontSize: 16,
-  },
-  localVideoContainer: {
-    position: "absolute",
-    bottom: 20,
-    right: 20,
-    width: 100,
-    height: 150,
+  mutedIndicator: {
+    backgroundColor: "rgba(244, 67, 54, 0.8)",
     borderRadius: 10,
-    overflow: "hidden",
-    borderWidth: 2,
-    borderColor: "#FFFFFF",
+    padding: 4,
+    marginLeft: 4,
   },
-  localVideo: {
+  qualityIndicator: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginLeft: 4,
+  },
+  fullScreenVideo: {
+    flex: 1,
+    position: "relative",
+  },
+  fullScreenVideoStream: {
     width: "100%",
     height: "100%",
   },
-  endedContainer: {
+  fullScreenPlaceholder: {
+    width: "100%",
+    height: "100%",
+    justifyContent: "center",
     alignItems: "center",
+    backgroundColor: "#333333",
   },
-  endedText: {
+  fullScreenName: {
     color: "#FFFFFF",
+    fontSize: 24,
+    fontWeight: "bold",
+  },
+  thumbnailGrid: {
+    position: "absolute",
+    bottom: 20,
+    left: 0,
+    right: 0,
+    height: 100,
+  },
+  audioCallContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: 20,
+  },
+  conversationNameLarge: {
+    color: "#FFFFFF",
+    fontSize: 28,
+    fontWeight: "bold",
+    textAlign: "center",
+    marginBottom: 10,
+  },
+  callStatusLarge: {
+    color: "#CCCCCC",
     fontSize: 18,
-    marginTop: 20,
+    textAlign: "center",
+    marginBottom: 40,
+  },
+  audioParticipantsContainer: {
+    width: "100%",
+    maxHeight: 200,
+  },
+  audioParticipant: {
+    alignItems: "center",
+    marginHorizontal: 15,
+    position: "relative",
+  },
+  audioParticipantAvatar: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    marginBottom: 8,
+  },
+  defaultAudioAvatar: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: "#128C7E",
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 8,
+  },
+  defaultAudioAvatarText: {
+    color: "#FFFFFF",
+    fontSize: 32,
+    fontWeight: "bold",
+  },
+  audioParticipantName: {
+    color: "#FFFFFF",
+    fontSize: 14,
+    fontWeight: "500",
+    textAlign: "center",
+  },
+  audioMutedIndicator: {
+    position: "absolute",
+    top: 55,
+    right: 5,
+    backgroundColor: "rgba(244, 67, 54, 0.8)",
+    borderRadius: 12,
+    padding: 4,
   },
   callControls: {
     flexDirection: "row",
     justifyContent: "space-around",
-    padding: 20,
+    paddingHorizontal: 20,
+    paddingVertical: 20,
   },
   controlButton: {
     alignItems: "center",
     padding: 10,
     borderRadius: 10,
+    minWidth: 60,
   },
   activeControlButton: {
     backgroundColor: "rgba(255, 255, 255, 0.2)",
@@ -1563,6 +2089,93 @@ const styles = StyleSheet.create({
     backgroundColor: "#FF3B30",
     justifyContent: "center",
     alignItems: "center",
+  },
+  incomingCallControls: {
+    flexDirection: "row",
+    justifyContent: "space-around",
+    width: "100%",
+    paddingHorizontal: 30,
+    marginBottom: 30,
+  },
+  incomingCallButton: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  rejectButton: {
+    backgroundColor: "#FF3B30",
+  },
+  acceptButton: {
+    backgroundColor: "#4CD964",
+  },
+  incomingButtonText: {
+    color: "#FFFFFF",
+    marginTop: 5,
+    fontSize: 12,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
+    justifyContent: "flex-end",
+  },
+  modalContent: {
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    padding: 20,
+    maxHeight: "80%",
+  },
+  modalHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 20,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: "bold",
+  },
+  participantListItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(255, 255, 255, 0.1)",
+  },
+  participantListAvatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    marginRight: 12,
+  },
+  participantListInfo: {
+    flex: 1,
+  },
+  participantListName: {
+    fontSize: 16,
+    fontWeight: "500",
+  },
+  participantListStatus: {
+    fontSize: 14,
+    marginTop: 2,
+  },
+  removeParticipantButton: {
+    padding: 8,
+  },
+  addParticipantButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 15,
+    borderRadius: 10,
+    marginTop: 20,
+  },
+  addParticipantText: {
+    color: "#FFFFFF",
+    marginLeft: 8,
+    fontSize: 16,
+    fontWeight: "500",
   },
 })
 

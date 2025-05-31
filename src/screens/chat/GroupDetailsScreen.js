@@ -31,7 +31,7 @@ const GroupDetailsScreen = () => {
   const { conversation } = route.params
   const { state: authState } = useContext(AuthContext)
   const { theme } = useContext(ThemeContext)
-  const { socket, isConnected } = useContext(SocketContext) // Add this line
+  const { socket, isConnected, checkUserStatus } = useContext(SocketContext) // Add this line
   const currentTheme = getTheme(theme)
 
   const [groupInfo, setGroupInfo] = useState(conversation)
@@ -117,9 +117,17 @@ const GroupDetailsScreen = () => {
       socket.on("user-status-change", handleStatusChange)
 
       // Get initial online status of participants
-      groupInfo.participants.forEach((participant) => {
-        socket.emit("get-user-status", { userId: participant._id })
-      })
+      if (socket && typeof checkUserStatus === "function") {
+        // Ensure checkUserStatus is available
+        groupInfo.participants.forEach((participant) => {
+          checkUserStatus(participant._id)
+        })
+      } else if (socket) {
+        // Fallback
+        groupInfo.participants.forEach((participant) => {
+          socket.emit("check-user-status", { userId: participant._id }) // Use the event name defined in SocketContext
+        })
+      }
 
       socket.on("user-status", ({ userId, status }) => {
         if (status === "online") {

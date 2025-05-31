@@ -19,7 +19,7 @@ import { ThemeContext } from "../../context/ThemeContext"
 import { getTheme } from "../../utils/theme"
 import * as ConversationsAPI from "../../api/conversations"
 import { formatDate } from "../../utils/formatters"
-import {API_BASE_URL, API_BASE_URL_FOR_MEDIA} from '../../config/api'; // Import API base URL
+import {API_BASE_URL_FOR_MEDIA} from '../../config/api'; // Import API base URL
 
 const ChatsListScreen = () => {
   const navigation = useNavigation()

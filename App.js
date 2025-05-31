@@ -2,7 +2,7 @@
 
 import AsyncStorage from "@react-native-async-storage/async-storage"
 import { useEffect, useState, useContext } from "react"
-import { StatusBar, LogBox, View, Text, ActivityIndicator } from "react-native"
+import { StatusBar, LogBox, View, Text, ActivityIndicator, DeviceEventEmitter } from "react-native"
 import { SafeAreaProvider } from "react-native-safe-area-context"
 
 // Initialize Firebase first
@@ -13,19 +13,19 @@ import { __DEV__ } from "react-native"
 
 // Navigation
 import AppNavigator from "./src/navigation/AppNavigator"
-import MainTabNavigator from "./src/navigation/MainTabNavigator"
 
 // Contexts
 import { AuthProvider, AuthContext } from "./src/context/AuthContext"
 import { SocketProvider } from "./src/context/SocketContext"
 import { ThemeProvider, ThemeContext } from "./src/context/ThemeContext"
-// import { NotificationProvider } from "./src/context/NotificationContext"
-import { CallNotificationProvider } from "./src/context/CallNotificationContext"
+import { CallNotificationProvider, useCallNotification } from "./src/context/CallNotificationContext"
 
 // Utils
 import { getTheme } from "./src/utils/theme"
 import PushNotificationService from "./src/utils/push-notification-service"
-import { NavigationContainer } from '@react-navigation/native';
+import { NavigationContainer } from "@react-navigation/native"
+
+import { createNavigationContainerRef } from "@react-navigation/native"
 
 // Set up AsyncStorage for debugging in development
 if (__DEV__) {
@@ -40,55 +40,96 @@ LogBox.ignoreLogs([
     "AsyncStorage has been extracted from react-native",
     "Setting a timer for a long period of time",
 ])
+const navigationRef = createNavigationContainerRef()
+global.navigationRef = navigationRef
+
+const CallActionHandler = () => {
+    const { acceptCall, rejectCall } = useCallNotification()
+
+    useEffect(() => {
+        console.log("CallActionHandler: Setting up DeviceEventEmitter listeners for call actions.")
+        const acceptSubscription = DeviceEventEmitter.addListener("acceptCallFromNotification", (callData) => {
+            console.log("App.js: acceptCallFromNotification event received", callData)
+            if (acceptCall && callData) {
+                acceptCall(callData)
+            } else {
+                console.warn("App.js: acceptCall function or callData not available for notification action.")
+            }
+        })
+
+        const rejectSubscription = DeviceEventEmitter.addListener("rejectCallFromNotification", (callData) => {
+            console.log("App.js: rejectCallFromNotification event received", callData)
+            if (rejectCall && callData) {
+                rejectCall(callData)
+            } else {
+                console.warn("App.js: rejectCall function or callData not available for notification action.")
+            }
+        })
+
+        return () => {
+            console.log("CallActionHandler: Cleaning up DeviceEventEmitter listeners.")
+            acceptSubscription.remove()
+            rejectSubscription.remove()
+        }
+    }, [acceptCall, rejectCall]) // Rerun if context functions change
+
+    return null // This component doesn't render anything itself
+}
 
 const AppContent = () => {
     const { state, authContext } = useContext(AuthContext)
+    // ... other useState hooks ...
+
+    console.log("AppContent rendering, authContext reference check:", authContext) // Add this line
     const { theme } = useContext(ThemeContext)
     const [isLoading, setIsLoading] = useState(true)
-    const [fcmInitialized, setFcmInitialized] = useState(false)
     const currentTheme = getTheme(theme)
+    const [pushNotificationsInitialized, setPushNotificationsInitialized] = useState(false)
 
     useEffect(() => {
-        // Initialize push notifications
+        console.log(
+            "AppContent useEffect triggered. isAuthenticated:",
+            state.isAuthenticated,
+            "pushInitialized:",
+            pushNotificationsInitialized,
+        )
         const initializePushNotifications = async () => {
+            if (pushNotificationsInitialized) {
+                console.log("App.js: Push notifications already attempted initialization.")
+                return
+            }
             try {
-                console.log("Initializing push notifications...")
+                console.log("App.js: Initializing push notifications...")
+                setPushNotificationsInitialized(true) // Set flag early to prevent re-runs from other effects
 
-                // Check if Firebase messaging is available
                 if (!messaging) {
-                    console.error("Firebase messaging not available")
+                    console.error("App.js: Firebase messaging not available")
                     return
                 }
 
-                // Request notification permissions
                 const hasPermission = await PushNotificationService.requestPermissions()
                 if (hasPermission) {
-                    console.log("Notification permissions granted")
-
-                    // Get FCM token
+                    console.log("App.js: Notification permissions granted")
                     const fcmToken = await PushNotificationService.getFCMToken()
                     if (fcmToken) {
-                        console.log("FCM token obtained successfully")
-                        setFcmInitialized(true)
+                        console.log("App.js: FCM token obtained successfully by App.js flow.")
                     } else {
-                        console.warn("Failed to obtain FCM token")
+                        console.warn("App.js: Failed to obtain FCM token in App.js flow.")
                     }
                 } else {
-                    console.warn("Notification permissions denied")
+                    console.warn("App.js: Notification permissions denied in App.js flow.")
                 }
             } catch (error) {
-                console.error("Error initializing push notifications:", error)
+                console.error("App.js: Error initializing push notifications:", error)
             }
         }
 
-        // Handle background messages
         const handleBackgroundMessage = async (remoteMessage) => {
-            console.log("Background message received:", remoteMessage.data?.type)
 
             try {
+                console.log("App.js - handleBackgroundMessage: Received background message:", remoteMessage)
                 if (remoteMessage.data?.type === "incoming_call") {
-                    // Show local notification for incoming call
-                    PushNotificationService.showIncomingCallNotification({
+                    const callData = {
                         caller: {
                             id: remoteMessage.data.callerId,
                             name: remoteMessage.data.callerName,
@@ -96,120 +137,107 @@ const AppContent = () => {
                         },
                         callType: remoteMessage.data.callType,
                         callId: remoteMessage.data.callId,
-                    })
+                        offer: remoteMessage.data.offer ? JSON.parse(remoteMessage.data.offer) : null,
+                        targetDeviceId: remoteMessage.data.targetDeviceId,
+                        timestamp: remoteMessage.data.timestamp ? Number.parseInt(remoteMessage.data.timestamp, 10) : Date.now(),
+                    }
+                    console.log("App.js - handleBackgroundMessage: Showing notification with data:", callData)
+                    PushNotificationService.showIncomingCallNotification(callData)
                 }
             } catch (error) {
                 console.error("Error handling background message:", error)
             }
         }
 
-        // Set background message handler
+        let unsubscribeForeground = () => {}
+        let unsubscribeTokenRefresh = () => {} // Initialize with a no-op function
+
         if (messaging) {
             messaging.setBackgroundMessageHandler(handleBackgroundMessage)
-
-            // Handle foreground messages
-            const unsubscribeForeground = messaging.onMessage(async (remoteMessage) => {
+            unsubscribeForeground = messaging.onMessage(async (remoteMessage) => {
+                // ... (keep existing onMessage logic)
                 console.log("Foreground message received:", remoteMessage.data?.type)
 
                 try {
                     if (remoteMessage.data?.type === "incoming_call") {
-                        // The CallNotificationContext will handle this via socket
-                        console.log("Incoming call message received in foreground")
+                        console.log("Incoming call message received in foreground. CallNotificationContext should handle.")
                     } else if (remoteMessage.data?.type === "message") {
-                        // Show message notification
-                        PushNotificationService.showMessageNotification({
-                            sender: {
-                                id: remoteMessage.data.senderId,
-                                name: remoteMessage.data.senderName,
-                            },
-                            message: {
-                                id: remoteMessage.data.messageId,
-                                text: remoteMessage.notification?.body || "New message",
-                            },
-                            conversationId: remoteMessage.data.conversationId,
-                        })
+                        const conversationId = remoteMessage.data.conversationId
+                        const currentRoute = navigationRef.getCurrentRoute()
+                        const isInConversation =
+                            currentRoute?.name === "Conversation" && currentRoute?.params?.conversationId === conversationId
+
+                        if (!isInConversation) {
+                            PushNotificationService.showMessageNotification({
+                                ...remoteMessage.data,
+                            })
+                        } else {
+                            console.log("Already in conversation, message will be handled by socket")
+                        }
                     }
                 } catch (error) {
                     console.error("Error handling foreground message:", error)
                 }
             })
 
-            // Handle notification opened app
-            const unsubscribeNotificationOpen = messaging.onNotificationOpenedApp((remoteMessage) => {
+            messaging.onNotificationOpenedApp((remoteMessage) => {
+                // ... (keep existing onNotificationOpenedApp logic)
                 console.log("Notification opened app from background:", remoteMessage.data?.type)
-                // Navigation will be handled by the notification service
             })
 
-            // Check whether an initial notification is available
             messaging
                 .getInitialNotification()
                 .then((remoteMessage) => {
+                    // ... (keep existing getInitialNotification logic)
                     if (remoteMessage) {
-                        console.log("App opened from notification:", remoteMessage.data?.type)
-                        // Handle initial notification navigation
+                        console.log("App opened from notification (getInitialNotification):", remoteMessage.data?.type)
                     }
                 })
                 .catch((error) => {
                     console.error("Error getting initial notification:", error)
                 })
 
-            // Handle FCM token refresh
-            const unsubscribeTokenRefresh = messaging.onTokenRefresh((fcmToken) => {
-                console.log("FCM token refreshed")
+            // messaging.onTokenRefresh returns an unsubscribe function
+            unsubscribeTokenRefresh = messaging.onTokenRefresh((fcmToken) => {
+                console.log("App.js: FCM token refreshed by onTokenRefresh")
                 PushNotificationService.saveFCMToken(fcmToken)
             })
+        }
 
-            // Load auth state from storage
-            const bootstrapAsync = async () => {
-                try {
-                    const token = await AsyncStorage.getItem("token")
-                    const userString = await AsyncStorage.getItem("user")
-
-                    if (token && userString) {
-                        const userData = JSON.parse(userString)
-                        authContext.restore({ token, user: userData })
-                    }
-                } catch (error) {
-                    console.error("Failed to load auth state:", error)
-                } finally {
-                    setIsLoading(false)
+        const bootstrapAsync = async () => {
+            try {
+                const token = await AsyncStorage.getItem("token")
+                const userString = await AsyncStorage.getItem("user")
+                if (token && userString) {
+                    const userData = JSON.parse(userString)
+                    authContext.restore({ token, user: userData })
                 }
+            } catch (error) {
+                console.error("App.js: Failed to load auth state:", error)
+            } finally {
+                setIsLoading(false)
             }
+        }
 
-            // Initialize everything
-            const initialize = async () => {
-                await Promise.all([initializePushNotifications(), bootstrapAsync()])
-            }
+        bootstrapAsync() // Always run bootstrap
 
-            initialize()
+        if (state.isAuthenticated && !pushNotificationsInitialized) {
+            initializePushNotifications()
+        } else if (!state.isAuthenticated) {
+            // If user logs out, reset the flag so it can re-initialize on next login
+            setPushNotificationsInitialized(false)
+            console.log("App.js: User not authenticated, pushNotificationsInitialized flag reset if previously true.")
+        }
 
-            // Cleanup function
-            return () => {
+        return () => {
+            if (typeof unsubscribeForeground === "function") {
                 unsubscribeForeground()
-                unsubscribeNotificationOpen()
+            }
+            if (typeof unsubscribeTokenRefresh === "function") {
                 unsubscribeTokenRefresh()
             }
-        } else {
-            // If Firebase messaging is not available, just load auth state
-            const bootstrapAsync = async () => {
-                try {
-                    const token = await AsyncStorage.getItem("token")
-                    const userString = await AsyncStorage.getItem("user")
-
-                    if (token && userString) {
-                        const userData = JSON.parse(userString)
-                        authContext.restore({ token, user: userData })
-                    }
-                } catch (error) {
-                    console.error("Failed to load auth state:", error)
-                } finally {
-                    setIsLoading(false)
-                }
-            }
-
-            bootstrapAsync()
         }
-    }, [authContext])
+    }, [state.isAuthenticated, pushNotificationsInitialized]) // Temporarily removed authContext for diagnosis
 
     if (isLoading) {
         return (
@@ -238,15 +266,27 @@ const AppContent = () => {
     return (
         <>
             <StatusBar barStyle={currentTheme.statusBar} backgroundColor={currentTheme.primary} />
-            <NavigationContainer>
+            <NavigationContainer
+                ref={navigationRef}
+                onReady={() => {
+                    console.log("Navigation container is ready")
+                    // Check if we have a pending navigation
+                    if (global.pendingNavigation) {
+                        const { screen, params } = global.pendingNavigation
+                        navigationRef.navigate(screen, params)
+                        global.pendingNavigation = null
+                    }
+                }}
+            >
                 {state.isAuthenticated ? (
                     <SocketProvider>
                         <CallNotificationProvider>
+                            <CallActionHandler />
                             <AppNavigator />
                         </CallNotificationProvider>
                     </SocketProvider>
                 ) : (
-                    <MainTabNavigator />
+                    <AppNavigator />
                 )}
             </NavigationContainer>
         </>
@@ -258,9 +298,7 @@ const App = () => {
         <SafeAreaProvider>
             <ThemeProvider>
                 <AuthProvider>
-                    {/*<NotificationProvider>*/}
-                        <AppContent />
-                    {/*</NotificationProvider>*/}
+                    <AppContent />
                 </AuthProvider>
             </ThemeProvider>
         </SafeAreaProvider>
