@@ -1,4 +1,4 @@
-// components/call/IncomingCallModal.js
+// components/call/IncomingGroupCallModal.js
 "use client"
 
 import { useEffect, useRef, useContext, useState } from "react"
@@ -20,26 +20,26 @@ import { API_BASE_URL_FOR_MEDIA } from "../../config/api" // Ensure this path is
 import { AuthContext } from "../../context/AuthContext"
 import { SocketContext } from "../../context/SocketContext"
 import AudioManager from "../../utils/audio-manager"
-import { getTheme } from "../../utils/theme" // Assuming you might use theme context
-import { ThemeContext } from "../../context/ThemeContext" // Assuming you might use theme context
+import { getTheme } from "../../utils/theme"
+import { ThemeContext } from "../../context/ThemeContext"
 
 const { width, height } = Dimensions.get("window")
 
-const IncomingCallModal = ({ visible, callData, onAccept, onReject, onClose }) => {
-  console.log("[IncomingCallModal] Component rendering/re-rendering. Props visible:", visible, "callData:", !!callData)
+const IncomingGroupCallModal = ({ visible, callData, onAccept, onReject, onClose }) => {
+  console.log("[IncomingGroupCallModal] Component rendering. Props visible:", visible, "callData:", !!callData)
   const { state: authState } = useContext(AuthContext)
   const { socket } = useContext(SocketContext)
-  const { theme } = useContext(ThemeContext) || { theme: "light" } // Default theme
+  const { theme } = useContext(ThemeContext) || { theme: "light" }
   const currentTheme = getTheme(theme)
 
   const [isVisible, setIsVisible] = useState(false)
-  const slideAnim = useRef(new Animated.Value(height)).current // For potential future animation
-  const pulseAnim = useRef(new Animated.Value(1)).current // For potential future animation
+  const slideAnim = useRef(new Animated.Value(height)).current
+  const pulseAnim = useRef(new Animated.Value(1)).current
   const vibrationPattern = useRef(null)
 
   useEffect(() => {
     console.log(
-      "[IncomingCallModal] useEffect for visibility. Props visible:",
+      "[IncomingGroupCallModal] useEffect for visibility. Props visible:",
       visible,
       "callData:",
       !!callData,
@@ -49,7 +49,6 @@ const IncomingCallModal = ({ visible, callData, onAccept, onReject, onClose }) =
     if (visible && callData) {
       setIsVisible(true)
       startIncomingCallEffects()
-      // Example: Animate modal in (optional, can be simple fade or slide)
       Animated.timing(slideAnim, {
         toValue: 0,
         duration: 300,
@@ -58,19 +57,17 @@ const IncomingCallModal = ({ visible, callData, onAccept, onReject, onClose }) =
       startPulseAnimation()
     } else {
       stopIncomingCallEffects()
-      // Example: Animate modal out
       Animated.timing(slideAnim, {
         toValue: height,
         duration: 300,
         useNativeDriver: true,
       }).start(() => {
-        setIsVisible(false) // Set internal visibility to false after animation
+        setIsVisible(false)
         if (!visible) {
-          onClose?.() // Call onClose if the main prop became false
+          onClose?.()
         }
       })
     }
-
     return () => {
       stopIncomingCallEffects()
     }
@@ -78,28 +75,28 @@ const IncomingCallModal = ({ visible, callData, onAccept, onReject, onClose }) =
 
   const startIncomingCallEffects = async () => {
     try {
-      console.log("[IncomingCallModal] Starting ringtone and vibration.")
+      console.log("[IncomingGroupCallModal] Starting ringtone and vibration for call:", callData?.callId)
       await AudioManager.startRingtone()
       const ONE_SECOND_IN_MS = 1000
       const PATTERN = [0.5 * ONE_SECOND_IN_MS, 1 * ONE_SECOND_IN_MS, 0.5 * ONE_SECOND_IN_MS, 1 * ONE_SECOND_IN_MS]
       Vibration.vibrate(PATTERN, true)
     } catch (error) {
-      console.error("[IncomingCallModal] Error starting incoming call effects:", error)
+      console.error("[IncomingGroupCallModal] Error starting effects:", error)
     }
   }
 
   const stopIncomingCallEffects = async () => {
     try {
-      console.log("[IncomingCallModal] Stopping ringtone and vibration.")
+      console.log("[IncomingGroupCallModal] Stopping ringtone and vibration for call:", callData?.callId)
       await AudioManager.stopRingtone()
       Vibration.cancel()
       if (vibrationPattern.current) {
-        clearInterval(vibrationPattern.current) // Though Vibration.cancel should be enough
+        clearInterval(vibrationPattern.current)
         vibrationPattern.current = null
       }
-      pulseAnim.setValue(1) // Reset pulse animation
+      pulseAnim.setValue(1)
     } catch (error) {
-      console.error("[IncomingCallModal] Error stopping incoming call effects:", error)
+      console.error("[IncomingGroupCallModal] Error stopping effects:", error)
     }
   }
 
@@ -120,39 +117,39 @@ const IncomingCallModal = ({ visible, callData, onAccept, onReject, onClose }) =
     ).start()
   }
 
-  const handleAccept = async () => {
-    console.log("[IncomingCallModal] Accept pressed.")
+  const handleAcceptPress = () => {
+    console.log("[IncomingGroupCallModal] Accept pressed for call:", callData?.callId)
     stopIncomingCallEffects()
-    onAccept?.(callData)
+    onAccept(callData)
     setIsVisible(false)
   }
 
-  const handleReject = async () => {
-    console.log("[IncomingCallModal] Reject pressed.")
+  const handleRejectPress = () => {
+    console.log("[IncomingGroupCallModal] Reject pressed for call:", callData?.callId)
     stopIncomingCallEffects()
-    onReject?.(callData)
+    onReject(callData)
     setIsVisible(false)
   }
 
   const handleModalCloseRequest = () => {
-    console.log("[IncomingCallModal] Modal close requested (e.g., Android back button).")
-    handleReject()
+    console.log("[IncomingGroupCallModal] Modal close requested (hardware back) for call:", callData?.callId)
+    handleRejectPress()
   }
 
   if (!isVisible || !callData) {
     return null
   }
 
-  const { caller, callType } = callData
+  const { caller, callType, conversationName, groupImage } = callData
   const callerName = caller?.name || "Unknown Caller"
-  const callerProfilePic = caller?.profilePicture
-  const callTypeDisplay = callType === "video" ? "Video Call" : "Audio Call"
+  const displayCallType = callType === "video" ? "Video" : "Audio"
+  const displayImage = groupImage || caller?.profilePicture // Prefer group image, fallback to caller image
 
   return (
     <Modal
       visible={isVisible}
       transparent={true}
-      animationType="none" // Using "none" because we handle animation with Animated API
+      animationType="none"
       onRequestClose={handleModalCloseRequest}
       statusBarTranslucent
     >
@@ -165,37 +162,34 @@ const IncomingCallModal = ({ visible, callData, onAccept, onReject, onClose }) =
       >
         <StatusBar barStyle="light-content" />
         <View style={styles.callInfoSection}>
-          <Text style={styles.incomingCallText}>Incoming {callTypeDisplay}</Text>
+          <Text style={styles.incomingCallText}>Incoming Group {displayCallType} Call</Text>
           <Animated.View style={[styles.callerImageContainer, { transform: [{ scale: pulseAnim }] }]}>
-            {callerProfilePic ? (
-              <Image source={{ uri: `${API_BASE_URL_FOR_MEDIA}${callerProfilePic}` }} style={styles.callerImage} />
+            {displayImage ? (
+              <Image source={{ uri: `${API_BASE_URL_FOR_MEDIA}${displayImage}` }} style={styles.callerImage} />
             ) : (
               <View style={styles.defaultCallerImage}>
-                <Text style={styles.callerInitial}>{callerName.charAt(0).toUpperCase()}</Text>
+                <Ionicons name="people-outline" size={60} color="#FFFFFF" />
               </View>
             )}
           </Animated.View>
-          <Text style={styles.callerName}>{callerName}</Text>
-          {/* <View style={styles.callTypeContainer}>
-          <Ionicons
-            name={callType === "video" ? "videocam-outline" : "call-outline"}
-            size={18}
-            color="#FFFFFF"
-          />
-          <Text style={styles.callTypeText}>{callTypeDisplay}</Text>
-        </View> */}
+          <Text style={styles.callerName} numberOfLines={1}>
+            {conversationName || "Group Call"}
+          </Text>
+          <Text style={styles.groupContextText} numberOfLines={1}>
+            {callerName} is calling
+          </Text>
         </View>
 
         <View style={styles.actionsContainer}>
           <View style={styles.mainActions}>
             <View style={styles.actionButtonWrapper}>
-              <TouchableOpacity style={[styles.actionButton, styles.rejectButton]} onPress={handleReject}>
+              <TouchableOpacity style={[styles.actionButton, styles.rejectButton]} onPress={handleRejectPress}>
                 <Ionicons name="close" size={32} color="#FFFFFF" />
               </TouchableOpacity>
               <Text style={styles.actionText}>Decline</Text>
             </View>
             <View style={styles.actionButtonWrapper}>
-              <TouchableOpacity style={[styles.actionButton, styles.acceptButton]} onPress={handleAccept}>
+              <TouchableOpacity style={[styles.actionButton, styles.acceptButton]} onPress={handleAcceptPress}>
                 <Ionicons name="call" size={30} color="#FFFFFF" />
               </TouchableOpacity>
               <Text style={styles.actionText}>Accept</Text>
@@ -207,10 +201,10 @@ const IncomingCallModal = ({ visible, callData, onAccept, onReject, onClose }) =
   )
 }
 
+// Styles adapted from IncomingCallModal for consistency
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    // backgroundColor: "rgba(0, 0, 0, 0.95)", // Set by theme
     paddingTop: Platform.OS === "android" ? StatusBar.currentHeight : 0,
   },
   callInfoSection: {
@@ -222,13 +216,14 @@ const styles = StyleSheet.create({
   incomingCallText: {
     color: "rgba(255, 255, 255, 0.8)",
     fontSize: 18,
-    marginBottom: 40, // Increased spacing
+    marginBottom: 30,
+    textAlign: "center",
   },
   callerImageContainer: {
-    marginBottom: 25, // Increased spacing
+    marginBottom: 20,
   },
   callerImage: {
-    width: 140, // Larger image
+    width: 140,
     height: 140,
     borderRadius: 70,
     borderWidth: 3,
@@ -244,34 +239,23 @@ const styles = StyleSheet.create({
     borderWidth: 3,
     borderColor: "rgba(255, 255, 255, 0.5)",
   },
-  callerInitial: {
-    color: "#FFFFFF",
-    fontSize: 64, // Larger initial
-    fontWeight: "bold",
-  },
   callerName: {
+    // Used for Conversation Name here
     color: "#FFFFFF",
-    fontSize: 26, // Larger name
+    fontSize: 26,
     fontWeight: "bold",
-    marginBottom: 10,
+    marginBottom: 5,
     textAlign: "center",
   },
-  callTypeContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "rgba(255, 255, 255, 0.15)",
-    paddingHorizontal: 15,
-    paddingVertical: 8,
-    borderRadius: 20,
-    marginTop: 10,
-  },
-  callTypeText: {
-    color: "#FFFFFF",
-    fontSize: 15,
-    marginLeft: 8,
+  groupContextText: {
+    // Used for "Caller is calling"
+    color: "rgba(255, 255, 255, 0.7)",
+    fontSize: 16,
+    marginBottom: 20,
+    textAlign: "center",
   },
   actionsContainer: {
-    paddingBottom: Platform.OS === "ios" ? 60 : 40, // More padding at bottom
+    paddingBottom: Platform.OS === "ios" ? 60 : 40,
     paddingHorizontal: 20,
   },
   mainActions: {
@@ -283,12 +267,12 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   actionButton: {
-    width: 70, // Standard button size
+    width: 70,
     height: 70,
     borderRadius: 35,
     justifyContent: "center",
     alignItems: "center",
-    marginHorizontal: 20, // Spacing between buttons
+    marginHorizontal: 20,
     elevation: 5,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
@@ -296,10 +280,10 @@ const styles = StyleSheet.create({
     shadowRadius: 3.84,
   },
   rejectButton: {
-    backgroundColor: "#FF3B30", // Standard red for reject
+    backgroundColor: "#FF3B30",
   },
   acceptButton: {
-    backgroundColor: "#34C759", // Standard green for accept
+    backgroundColor: "#34C759",
   },
   actionText: {
     color: "rgba(255, 255, 255, 0.9)",
@@ -308,4 +292,4 @@ const styles = StyleSheet.create({
   },
 })
 
-export default IncomingCallModal
+export default IncomingGroupCallModal

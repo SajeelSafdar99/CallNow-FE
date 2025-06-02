@@ -2,37 +2,35 @@
 
 import AsyncStorage from "@react-native-async-storage/async-storage"
 import { useEffect, useState, useContext } from "react"
-import { StatusBar, LogBox, View, Text, ActivityIndicator, DeviceEventEmitter } from "react-native"
+import { StatusBar, LogBox, View, Text, ActivityIndicator, DeviceEventEmitter, AppState } from "react-native" // Added AppState
 import { SafeAreaProvider } from "react-native-safe-area-context"
+import { getTheme } from "./src/utils/theme"
 
 // Initialize Firebase first
-import "./src/config/firebase" // This will initialize Firebase
+import "./src/config/firebase"
 
 import { messaging } from "./src/config/firebase"
 import { __DEV__ } from "react-native"
 
 // Navigation
 import AppNavigator from "./src/navigation/AppNavigator"
+import { NavigationContainer, createNavigationContainerRef } from "@react-navigation/native"
 
 // Contexts
 import { AuthProvider, AuthContext } from "./src/context/AuthContext"
-import { SocketProvider } from "./src/context/SocketContext"
+import { SocketProvider, SocketContext } from "./src/context/SocketContext" // Imported SocketContext
 import { ThemeProvider, ThemeContext } from "./src/context/ThemeContext"
 import { CallNotificationProvider, useCallNotification } from "./src/context/CallNotificationContext"
 
-// Utils
-import { getTheme } from "./src/utils/theme"
+// Components
+import GlobalCallManager from "./src/components/calls/GlobalCallManager"
+
 import PushNotificationService from "./src/utils/push-notification-service"
-import { NavigationContainer } from "@react-navigation/native"
 
-import { createNavigationContainerRef } from "@react-navigation/native"
-
-// Set up AsyncStorage for debugging in development
 if (__DEV__) {
     global.AsyncStorage = AsyncStorage
 }
 
-// Ignore specific warnings
 LogBox.ignoreLogs([
     "ViewPropTypes will be removed",
     "ColorPropType will be removed",
@@ -42,6 +40,69 @@ LogBox.ignoreLogs([
 ])
 const navigationRef = createNavigationContainerRef()
 global.navigationRef = navigationRef
+
+// --- UserStatusManager Component Definition ---
+const UserStatusManager = () => {
+    const socketContext = useContext(SocketContext)
+    const authContext = useContext(AuthContext)
+
+    const setOnlineStatus = socketContext?.setOnlineStatus
+    const isSocketConnected = socketContext?.isConnected
+    const isAuthenticated = authContext?.state?.isAuthenticated
+
+    useEffect(() => {
+        const performSetOnline = () => {
+            if (isAuthenticated && isSocketConnected && typeof setOnlineStatus === "function") {
+                console.log("[UserStatusManager] App active and conditions met, calling setOnlineStatus(true).")
+                setOnlineStatus(true)
+            } else {
+                console.log(
+                    "[UserStatusManager] Conditions NOT met for setOnlineStatus(true). Auth:",
+                    isAuthenticated,
+                    "SocketConnected:",
+                    isSocketConnected,
+                    "setOnlineStatus available:",
+                    typeof setOnlineStatus === "function",
+                )
+            }
+        }
+
+        // Initial set online when component mounts or dependencies change satisfying conditions
+        performSetOnline()
+
+        const handleAppStateChange = (nextAppState) => {
+            console.log("[UserStatusManager] AppState changed to:", nextAppState)
+            if (nextAppState === "active") {
+                performSetOnline()
+            }
+            // Optional: Handle background/inactive states to set offline
+            // else if (nextAppState === 'background' || nextAppState === 'inactive') {
+            //   if (isAuthenticated && isSocketConnected && typeof setOnlineStatus === 'function') {
+            //     console.log('[UserStatusManager] App inactive/background, calling setOnlineStatus(false).');
+            //     setOnlineStatus(false); // Or a different event for 'last_seen'
+            //   }
+            // }
+        }
+
+        const subscription = AppState.addEventListener("change", handleAppStateChange)
+        console.log("[UserStatusManager] Subscribed to AppState changes.")
+
+        return () => {
+            console.log("[UserStatusManager] Unsubscribing from AppState changes.")
+            subscription.remove()
+            // Optional: When app is fully closed or component unmounts,
+            // if socket is still connected, try to set offline.
+            // However, server-side disconnect handling is generally more reliable for offline status.
+            // if (isAuthenticated && isSocketConnected && typeof setOnlineStatus === 'function') {
+            //   console.log('[UserStatusManager] Cleanup, calling setOnlineStatus(false).');
+            //   setOnlineStatus(false);
+            // }
+        }
+    }, [isAuthenticated, isSocketConnected, setOnlineStatus])
+
+    return null // This is a side-effect component, does not render anything
+}
+// --- End of UserStatusManager Component Definition ---
 
 const CallActionHandler = () => {
     const { acceptCall, rejectCall } = useCallNotification()
@@ -71,25 +132,28 @@ const CallActionHandler = () => {
             acceptSubscription.remove()
             rejectSubscription.remove()
         }
-    }, [acceptCall, rejectCall]) // Rerun if context functions change
+    }, [acceptCall, rejectCall])
 
-    return null // This component doesn't render anything itself
+    return null
 }
 
 const AppContent = () => {
-    const { state, authContext } = useContext(AuthContext)
-    // ... other useState hooks ...
-
-    console.log("AppContent rendering, authContext reference check:", authContext) // Add this line
+    const { state: authState } = useContext(AuthContext) // Renamed 'state' to 'authState' to avoid conflict
     const { theme } = useContext(ThemeContext)
-    const [isLoading, setIsLoading] = useState(true)
     const currentTheme = getTheme(theme)
     const [pushNotificationsInitialized, setPushNotificationsInitialized] = useState(false)
+
+    console.log(
+        "AppContent rendering. AuthContext state: isLoading=",
+        authState.isLoading,
+        ", isAuthenticated=",
+        authState.isAuthenticated,
+    )
 
     useEffect(() => {
         console.log(
             "AppContent useEffect triggered. isAuthenticated:",
-            state.isAuthenticated,
+            authState.isAuthenticated,
             "pushInitialized:",
             pushNotificationsInitialized,
         )
@@ -100,7 +164,7 @@ const AppContent = () => {
             }
             try {
                 console.log("App.js: Initializing push notifications...")
-                setPushNotificationsInitialized(true) // Set flag early to prevent re-runs from other effects
+                setPushNotificationsInitialized(true)
 
                 if (!messaging) {
                     console.error("App.js: Firebase messaging not available")
@@ -125,7 +189,6 @@ const AppContent = () => {
         }
 
         const handleBackgroundMessage = async (remoteMessage) => {
-
             try {
                 console.log("App.js - handleBackgroundMessage: Received background message:", remoteMessage)
                 if (remoteMessage.data?.type === "incoming_call") {
@@ -150,14 +213,12 @@ const AppContent = () => {
         }
 
         let unsubscribeForeground = () => {}
-        let unsubscribeTokenRefresh = () => {} // Initialize with a no-op function
+        let unsubscribeTokenRefresh = () => {}
 
         if (messaging) {
             messaging.setBackgroundMessageHandler(handleBackgroundMessage)
             unsubscribeForeground = messaging.onMessage(async (remoteMessage) => {
-                // ... (keep existing onMessage logic)
                 console.log("Foreground message received:", remoteMessage.data?.type)
-
                 try {
                     if (remoteMessage.data?.type === "incoming_call") {
                         console.log("Incoming call message received in foreground. CallNotificationContext should handle.")
@@ -165,7 +226,7 @@ const AppContent = () => {
                         const conversationId = remoteMessage.data.conversationId
                         const currentRoute = navigationRef.getCurrentRoute()
                         const isInConversation =
-                            currentRoute?.name === "Conversation" && currentRoute?.params?.conversationId === conversationId
+                            currentRoute?.name === "Chat" && currentRoute?.params?.conversationId === conversationId
 
                         if (!isInConversation) {
                             PushNotificationService.showMessageNotification({
@@ -181,14 +242,12 @@ const AppContent = () => {
             })
 
             messaging.onNotificationOpenedApp((remoteMessage) => {
-                // ... (keep existing onNotificationOpenedApp logic)
                 console.log("Notification opened app from background:", remoteMessage.data?.type)
             })
 
             messaging
                 .getInitialNotification()
                 .then((remoteMessage) => {
-                    // ... (keep existing getInitialNotification logic)
                     if (remoteMessage) {
                         console.log("App opened from notification (getInitialNotification):", remoteMessage.data?.type)
                     }
@@ -197,34 +256,15 @@ const AppContent = () => {
                     console.error("Error getting initial notification:", error)
                 })
 
-            // messaging.onTokenRefresh returns an unsubscribe function
             unsubscribeTokenRefresh = messaging.onTokenRefresh((fcmToken) => {
                 console.log("App.js: FCM token refreshed by onTokenRefresh")
                 PushNotificationService.saveFCMToken(fcmToken)
             })
         }
 
-        const bootstrapAsync = async () => {
-            try {
-                const token = await AsyncStorage.getItem("token")
-                const userString = await AsyncStorage.getItem("user")
-                if (token && userString) {
-                    const userData = JSON.parse(userString)
-                    authContext.restore({ token, user: userData })
-                }
-            } catch (error) {
-                console.error("App.js: Failed to load auth state:", error)
-            } finally {
-                setIsLoading(false)
-            }
-        }
-
-        bootstrapAsync() // Always run bootstrap
-
-        if (state.isAuthenticated && !pushNotificationsInitialized) {
+        if (authState.isAuthenticated && !pushNotificationsInitialized) {
             initializePushNotifications()
-        } else if (!state.isAuthenticated) {
-            // If user logs out, reset the flag so it can re-initialize on next login
+        } else if (!authState.isAuthenticated) {
             setPushNotificationsInitialized(false)
             console.log("App.js: User not authenticated, pushNotificationsInitialized flag reset if previously true.")
         }
@@ -237,9 +277,9 @@ const AppContent = () => {
                 unsubscribeTokenRefresh()
             }
         }
-    }, [state.isAuthenticated, pushNotificationsInitialized]) // Temporarily removed authContext for diagnosis
+    }, [authState.isAuthenticated, pushNotificationsInitialized])
 
-    if (isLoading) {
+    if (authState.isLoading) {
         return (
             <View
                 style={{
@@ -270,7 +310,6 @@ const AppContent = () => {
                 ref={navigationRef}
                 onReady={() => {
                     console.log("Navigation container is ready")
-                    // Check if we have a pending navigation
                     if (global.pendingNavigation) {
                         const { screen, params } = global.pendingNavigation
                         navigationRef.navigate(screen, params)
@@ -278,11 +317,15 @@ const AppContent = () => {
                     }
                 }}
             >
-                {state.isAuthenticated ? (
+                {authState.isAuthenticated ? (
                     <SocketProvider>
                         <CallNotificationProvider>
-                            <CallActionHandler />
-                            <AppNavigator />
+                            <UserStatusManager /> {/* Placed UserStatusManager here */}
+                            <View style={{ flex: 1 }}>
+                                <AppNavigator />
+                                <CallActionHandler />
+                                <GlobalCallManager />
+                            </View>
                         </CallNotificationProvider>
                     </SocketProvider>
                 ) : (
@@ -292,7 +335,6 @@ const AppContent = () => {
         </>
     )
 }
-
 const App = () => {
     return (
         <SafeAreaProvider>

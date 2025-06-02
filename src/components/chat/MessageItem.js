@@ -44,6 +44,11 @@ const MessageItem = ({
                        onPress,
                        allMessages = [], // Add this prop to receive all messages for media gallery
                      }) => {
+  // At the very beginning of the MessageItem functional component
+  console.log(
+    `[MessageItem - ${message?._id || "N/A"}] Component Render/Re-render. Message type: ${message?.contentType}, Media URL: ${message?.mediaUrl}, isOwn: ${isOwnMessage}`,
+  )
+
   const [isPlaying, setIsPlaying] = useState(false)
   const [playbackProgress, setPlaybackProgress] = useState(0)
   const [showOptions, setShowOptions] = useState(false)
@@ -91,6 +96,11 @@ const MessageItem = ({
   // Check if file exists in app storage and auto-download for own messages
   useEffect(() => {
     const checkFileExists = async () => {
+      // Inside checkFileExists, at the beginning
+      console.log(
+        `[MessageItem - ${message?._id || "N/A"}] checkFileExists called. Media URL: ${mediaUrl}, File Name: ${fileName}, Content Type: ${message.contentType}`,
+      )
+
       if (!mediaUrl || !["document", "video", "audio"].includes(message.contentType)) return
 
       const safeFileName = fileName.replace(/[^a-zA-Z0-9.-]/g, "_")
@@ -260,17 +270,38 @@ const MessageItem = ({
 
   // Get correct media URL
   const getMediaUrl = (mediaPath) => {
+    // Inside getMediaUrl function, before the first `if (!mediaPath)`
+    console.log(`[MessageItem - ${message?._id || "N/A"}] getMediaUrl: Original mediaPath received:`, mediaPath)
+    console.log(
+      `[MessageItem - ${message?._id || "N/A"}] getMediaUrl: API_BASE_URL_FOR_MEDIA check:`,
+      API_BASE_URL_FOR_MEDIA,
+    )
+
+    if (!API_BASE_URL_FOR_MEDIA) {
+      console.error(
+        `[MessageItem - ${message?._id || "N/A"}] getMediaUrl: API_BASE_URL_FOR_MEDIA is not configured or is falsy!`,
+      )
+    }
+
     if (!mediaPath) {
+      console.warn(
+        `[MessageItem - ${message?._id || "N/A"}] getMediaUrl: mediaPath is falsy. Original mediaPath:`,
+        mediaPath,
+      )
       return null
     }
 
     if (mediaPath.startsWith("http")) {
+      console.log(`[MessageItem - ${message?._id || "N/A"}] getMediaUrl: Returning direct http(s) URL:`, mediaPath)
       return mediaPath
     }
 
     // Ensure the path starts with a slash
     const formattedPath = mediaPath.startsWith("/") ? mediaPath : `/${mediaPath}`
-    return `${API_BASE_URL_FOR_MEDIA}${formattedPath}`
+
+    const constructedUrl = `${API_BASE_URL_FOR_MEDIA}${formattedPath}`
+    console.log(`[MessageItem - ${message?._id || "N/A"}] getMediaUrl: Returning URL:`, constructedUrl)
+    return constructedUrl
   }
 
   // Request storage permission for downloading files
@@ -866,7 +897,15 @@ const MessageItem = ({
   // Render image message
   const renderImageMessage = () => {
     const imageUrl = getMediaUrl(message.mediaUrl)
-
+    console.log(
+      `[MessageItem - ${message._id}] renderImageMessage: Attempting to load image with URI: ${imageUrl}, Original message.mediaUrl: ${message.mediaUrl}`,
+    )
+    if (!imageUrl) {
+      console.warn(
+        `[MessageItem - ${message._id}] renderImageMessage: imageUrl is invalid (falsy) before rendering Image component. Original message.mediaUrl: ${message.mediaUrl}`,
+      )
+      // The existing logic already handles imageError state, so no change needed there, just logging.
+    }
     return (
       <View style={styles.imageContainer}>
         {imageLoading && (
@@ -901,17 +940,37 @@ const MessageItem = ({
             resizeMode="contain"
             onLoadStart={() => setImageLoading(true)}
             onLoad={(event) => {
-              const { width: imageWidth, height: imageHeight } = event.nativeEvent.source;
+              const { width: imageWidth, height: imageHeight } = event.nativeEvent.source
+              console.log(
+                `[MessageItem - ${message._id}] renderImageMessage - Image onLoad: URI: ${imageUrl}, Dimensions: ${imageWidth}x${imageHeight}`,
+              )
               if (imageWidth && imageHeight) {
-                const ratio = imageWidth / imageHeight;
-                setImageAspectRatio(ratio);
+                const ratio = imageWidth / imageHeight
+                setImageAspectRatio(ratio)
+              }
+              // Explicitly set imageError to false on successful load, in case it was true from a previous attempt
+              if (imageError) {
+                console.log(
+                  `[MessageItem - ${message._id}] renderImageMessage - Image onLoad: Clearing previous imageError state for URI: ${imageUrl}`,
+                )
+                setImageError(false)
               }
             }}
             onLoadEnd={() => setImageLoading(false)}
             onError={(e) => {
-              console.error("Image error:", e);
-              setImageLoading(false);
-              setImageError(true);
+              const nativeError = e.nativeEvent?.error
+              // The existing console.error is removed as we add more detailed logging below.
+              // console.error("Image load failed. Event:", e, "Native error:", nativeError);
+              console.error(
+                `[MessageItem - ${message._id}] renderImageMessage - Image onError: URI attempted: ${imageUrl}`,
+                {
+                  nativeEventError: nativeError,
+                  fullEvent: e.nativeEvent, // Log the nativeEvent part which is usually more detailed
+                  originalMessageMediaUrl: message.mediaUrl,
+                },
+              )
+              setImageLoading(false)
+              setImageError(true)
             }}
           />
         )}
@@ -929,6 +988,14 @@ const MessageItem = ({
   // Render video message
   const renderVideoMessage = () => {
     const videoUrl = getMediaUrl(message.mediaUrl)
+    console.log(
+      `[MessageItem - ${message._id}] renderVideoMessage: Attempting to load video with URI: ${videoUrl}, Original message.mediaUrl: ${message.mediaUrl}`,
+    )
+    if (!videoUrl) {
+      console.warn(
+        `[MessageItem - ${message._id}] renderVideoMessage: videoUrl is invalid (falsy) before rendering Video component. Original message.mediaUrl: ${message.mediaUrl}`,
+      )
+    }
     // Get the video filename from mediaName or extract it from mediaUrl
     const videoName = message.mediaName || (message.mediaUrl ? message.mediaUrl.split("/").pop() : "")
 
@@ -943,7 +1010,16 @@ const MessageItem = ({
             resizeMode="contain"
             paused={true}
             muted={true}
-            onError={(e) => console.error("Video error:", e)}
+            onError={(e) => {
+              console.error(
+                `[MessageItem - ${message._id}] renderVideoMessage - Video onError: URI attempted: ${videoUrl}`,
+                {
+                  errorDetails: e, // Full error object from react-native-video
+                  originalMessageMediaUrl: message.mediaUrl,
+                },
+              )
+              // Potentially set a videoError state here if you have one
+            }}
           />
 
           <View style={styles.videoPlayButton}>
@@ -972,6 +1048,15 @@ const MessageItem = ({
       const mediaItem = mediaItems[0]
       const mediaUrl = getMediaUrl(mediaItem.mediaUrl)
 
+      console.log(
+        `[MessageItem - ${message._id}] renderMessageContent (mediaItem): Attempting to load mediaItem (${mediaItem.contentType}) with URI: ${mediaUrl}, Original mediaItem.mediaUrl: ${mediaItem.mediaUrl}`,
+      )
+      if (!mediaUrl) {
+        console.warn(
+          `[MessageItem - ${message._id}] renderMessageContent (mediaItem): mediaUrl for mediaItem (${mediaItem.contentType}) is invalid (falsy). Original mediaItem.mediaUrl: ${mediaItem.mediaUrl}`,
+        )
+      }
+
       if (mediaItem.contentType === "image") {
         return (
           <TouchableOpacity
@@ -985,17 +1070,37 @@ const MessageItem = ({
               resizeMode="cover"
               onLoadStart={() => setImageLoading(true)}
               onLoad={(event) => {
-                const { width: imageWidth, height: imageHeight } = event.nativeEvent.source;
+                const { width: imageWidth, height: imageHeight } = event.nativeEvent.source
+                console.log(
+                  `[MessageItem - ${message._id}] renderMessageContent (mediaItem image) - Image onLoad: URI: ${mediaUrl}, Dimensions: ${imageWidth}x${imageHeight}`,
+                )
                 if (imageWidth && imageHeight) {
-                  const ratio = imageWidth / imageHeight;
-                  setImageAspectRatio(ratio);
+                  const ratio = imageWidth / imageHeight
+                  setImageAspectRatio(ratio) // This uses the main component's imageAspectRatio state
+                }
+                // Explicitly set imageError to false
+                if (imageError) {
+                  // Checks the main component's imageError state
+                  console.log(
+                    `[MessageItem - ${message._id}] renderMessageContent (mediaItem image) - Image onLoad: Clearing previous imageError state for URI: ${mediaUrl}`,
+                  )
+                  setImageError(false)
                 }
               }}
               onLoadEnd={() => setImageLoading(false)}
               onError={(e) => {
-                console.error("Image error:", e)
-                setImageLoading(false)
-                setImageError(true)
+                const nativeError = e.nativeEvent?.error
+                // The existing console.error is removed.
+                console.error(
+                  `[MessageItem - ${message._id}] renderMessageContent (mediaItem image) - Image onError: URI attempted: ${mediaUrl}`,
+                  {
+                    nativeEventError: nativeError,
+                    fullEvent: e.nativeEvent,
+                    originalMediaItemMediaUrl: mediaItem.mediaUrl,
+                  },
+                )
+                setImageLoading(false) // This uses the main component's imageLoading state
+                setImageError(true) // This uses the main component's imageError state
               }}
             />
             {mediaItems.length > 1 && (
@@ -1021,7 +1126,16 @@ const MessageItem = ({
                 resizeMode="contain"
                 paused={true}
                 muted={true}
-                onError={(e) => console.error("Video error:", e)}
+                onError={(e) => {
+                  console.error(
+                    `[MessageItem - ${message._id}] renderMessageContent (mediaItem video) - Video onError: URI attempted: ${mediaUrl}`,
+                    {
+                      errorDetails: e,
+                      originalMediaItemMediaUrl: mediaItem.mediaUrl,
+                    },
+                  )
+                  // Potentially set a videoError state here if you have one for mediaItems
+                }}
               />
               <View style={styles.videoPlayButton}>
                 <Ionicons name="play" size={30} color="#FFFFFF" />
@@ -1137,8 +1251,7 @@ const MessageItem = ({
   }
 
   // Determine if this is a media message
-  const isMediaMessage = ["image", "video"].includes(message.contentType) ||
-    (mediaItems && mediaItems.length > 0);
+  const isMediaMessage = ["image", "video"].includes(message.contentType) || (mediaItems && mediaItems.length > 0)
 
   return (
     <View style={styles.messageWrapper}>
@@ -1538,7 +1651,7 @@ const styles = StyleSheet.create({
     overflow: "hidden",
   },
   videoThumbnail: {
-    aspectRatio: 16/9,
+    aspectRatio: 16 / 9,
     backgroundColor: "#000",
     justifyContent: "center",
     alignItems: "center",

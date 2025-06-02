@@ -47,6 +47,7 @@ import { check, request, PERMISSIONS, RESULTS, openSettings } from "react-native
 import Share from "react-native-share"
 import RNFS from "react-native-fs"
 import AsyncStorage from "@react-native-async-storage/async-storage"
+import * as GroupCallAPI from "../../api/group-calls"
 
 const ChatScreen = () => {
   const navigation = useNavigation()
@@ -66,6 +67,7 @@ const ChatScreen = () => {
     setTyping,
     setStopTyping,
     setOnlineStatus, // Added for online status management
+    sendGroupCallOffer, // Import sendGroupCallOffer
     checkUserStatus, // Added for user status checking
   } = useContext(SocketContext)
 
@@ -288,7 +290,6 @@ const ChatScreen = () => {
   }
 
   const conversationDetails = getConversationDetails()
-
   // Fetch messages
   const fetchMessages = async (pageNum = 1, append = false) => {
     try {
@@ -1755,34 +1756,124 @@ const ChatScreen = () => {
 
   // Add these functions inside the ChatScreen component
 
-  const handleStartGroupAudioCall = () => {
+  const handleStartGroupAudioCall = async () => {
     if (!conversationDetails.isGroup) {
       return
     }
-    console.log("[ChatScreen] Navigating to GROUP AUDIO call. Conversation ID:", conversation._id)
-    navigation.navigate("GroupCallScreen", {
-      conversationId: conversation._id,
-      conversationName: conversationDetails.name,
-      initialParticipants: conversationDetails.participants,
-      callType: "audio",
-      isIncoming: false,
-      callId: null,
-    })
+    console.log("[ChatScreen] Attempting to start GROUP AUDIO call. Conversation ID:", conversation._id)
+
+    try {
+      const initialParticipantsForAPI = conversationDetails.participants.map((p) => ({ userId: p._id || p.id }))
+      const callType = "audio"
+
+      console.log(`[ChatScreen] Calling createGroupCall API for conversation ${conversation._id}, type: ${callType}`)
+      const apiResponse = await GroupCallAPI.createGroupCall(
+        conversation._id,
+        callType,
+        conversationDetails.name,
+        initialParticipantsForAPI,
+      )
+
+      if (apiResponse && apiResponse.success && apiResponse.groupCall && apiResponse.groupCall._id) {
+        const actualGroupCallId = apiResponse.groupCall._id
+        const initiatorId = apiResponse.groupCall.initiator?._id || apiResponse.groupCall.initiator // Assuming initiator might be populated or just an ID
+
+        console.log(`[ChatScreen] Group call created/retrieved with ID: ${actualGroupCallId}. Navigating...`)
+
+        // Emit group-call-offer to other participants
+        const callerInfo = {
+          id: authState.user.id,
+          name: authState.user.name,
+          profilePicture: authState.user.profilePicture,
+          deviceId: authState.user.activeDevice,
+        }
+        const participantsForOffer = conversationDetails.participants.map((p) => ({ userId: p._id }))
+        sendGroupCallOffer({
+          callId: actualGroupCallId,
+          conversationId: conversation._id,
+          participants: participantsForOffer,
+          callType,
+          callerInfo,
+        })
+
+        navigation.navigate("GroupCallScreen", {
+          groupCallId: actualGroupCallId,
+          conversationId: conversation._id,
+          conversationName: conversationDetails.name,
+          initiatorId: initiatorId, // Pass initiatorId
+          initialParticipants: conversationDetails.participants, // Keep this if GroupCallScreen uses it
+          callType: callType,
+          isIncoming: false, // This seems to be for incoming call UI, set appropriately
+          // callId: null, // This might be redundant if groupCallId is the primary identifier
+        })
+      } else {
+        Alert.alert("Error", `Failed to create group call: ${apiResponse?.message || "Unknown error"}`)
+        console.error("[ChatScreen] Failed to create/retrieve group call:", apiResponse)
+      }
+    } catch (error) {
+      console.error("[ChatScreen] Error initiating group audio call:", error)
+      Alert.alert("Error", "Could not start the group audio call. Please try again.")
+    }
   }
 
-  const handleStartGroupVideoCall = () => {
+  const handleStartGroupVideoCall = async () => {
     if (!conversationDetails.isGroup) {
       return
     }
-    console.log("[ChatScreen] Navigating to GROUP VIDEO call. Conversation ID:", conversation._id)
-    navigation.navigate("GroupCallScreen", {
-      conversationId: conversation._id,
-      conversationName: conversationDetails.name,
-      initialParticipants: conversationDetails.participants,
-      callType: "video",
-      isIncoming: false,
-      callId: null,
-    })
+    console.log("[ChatScreen] Attempting to start GROUP VIDEO call. Conversation ID:", conversation._id)
+
+    try {
+      const initialParticipantsForAPI = conversationDetails.participants.map((p) => ({ userId: p._id || p.id }))
+      const callType = "video"
+
+      console.log(`[ChatScreen] Calling createGroupCall API for conversation ${conversation._id}, type: ${callType}`)
+      const apiResponse = await GroupCallAPI.createGroupCall(
+        conversation._id,
+        callType,
+        conversationDetails.name,
+        initialParticipantsForAPI,
+      )
+
+      if (apiResponse && apiResponse.success && apiResponse.groupCall && apiResponse.groupCall._id) {
+        const actualGroupCallId = apiResponse.groupCall._id
+        const initiatorId = apiResponse.groupCall.initiator?._id || apiResponse.groupCall.initiator
+
+        console.log(`[ChatScreen] Group call created/retrieved with ID: ${actualGroupCallId}. Navigating...`)
+
+        // Emit group-call-offer to other participants
+        const callerInfo = {
+          id: authState.user.id,
+          name: authState.user.name,
+          profilePicture: authState.user.profilePicture,
+          deviceId: authState.user.activeDevice,
+        }
+        const participantsForOffer = conversationDetails.participants.map((p) => ({ userId: p._id }))
+        sendGroupCallOffer({
+          callId: actualGroupCallId,
+          conversationId: conversation._id,
+          participants: participantsForOffer,
+          callType,
+          callerInfo,
+        })
+
+        navigation.navigate("GroupCallScreen", {
+          groupCallId: actualGroupCallId,
+          conversationId: conversation._id,
+          conversationName: conversationDetails.name,
+          initiatorId: initiatorId, // Pass initiatorId
+          initialParticipants: conversationDetails.participants, // Keep this if GroupCallScreen uses it
+          callType: callType,
+          isIncoming: false, // This seems to be for incoming call UI, set appropriately
+          // callId: null, // This might be redundant if groupCallId is the primary identifier
+        })
+      } else {
+        Alert.alert("Error", `Failed to create group call: ${apiResponse?.message || "Unknown error"}`)
+        console.error("[ChatScreen] Failed to create/retrieve group call:", apiResponse)
+      }
+    } catch (error) {
+      console.error("[ChatScreen] Error initiating group video call:", error)
+      Alert.alert("Error", "Could not start the group video call. Please try again.")
+    }
   }
 
   return (

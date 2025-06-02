@@ -1,23 +1,25 @@
+"use client"
+
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs"
 import Ionicons from "react-native-vector-icons/Ionicons"
-import { useContext } from 'react'
+import { useContext } from "react"
 // Screens
-import SettingsNavigator from './SettingsNavigator';
+import SettingsNavigator from "./SettingsNavigator"
 import ChatNavigator from "../navigation/ChatNavigator"
-import { getTheme } from '../utils/theme';
-import { ThemeContext } from '../context/ThemeContext';
-import CallsStack from './CallNavigator';
-import AdminNavigator from './AdminNavigator';
-import { AuthContext } from '../context/AuthContext';
+import { getTheme } from "../utils/theme"
+import { ThemeContext } from "../context/ThemeContext"
+import CallsStack from "./CallNavigator"
+import AdminNavigator from "./AdminNavigator"
+import { AuthContext } from "../context/AuthContext"
 
 const Tab = createBottomTabNavigator()
 
 const MainTabNavigator = () => {
-  const { theme } = useContext(ThemeContext);
-  const { state: authState } = useContext(AuthContext);
-  const currentTheme = getTheme(theme);
+  const { theme } = useContext(ThemeContext)
+  const { state: authState } = useContext(AuthContext)
+  const currentTheme = getTheme(theme)
 
-  const isAdmin = authState.user?.isAdmin;
+  const isAdmin = authState.user?.isAdmin
 
   return (
     <Tab.Navigator
@@ -43,11 +45,7 @@ const MainTabNavigator = () => {
         options={{
           headerShown: false,
           tabBarIcon: ({ color, size, focused }) => (
-            <Ionicons
-              name={focused ? "chatbubble" : "chatbubble-outline"}
-              size={size}
-              color={color}
-            />
+            <Ionicons name={focused ? "chatbubble" : "chatbubble-outline"} size={size} color={color} />
           ),
         }}
       />
@@ -56,7 +54,7 @@ const MainTabNavigator = () => {
         component={CallsStack}
         options={{
           tabBarIcon: ({ color, size, focused }) => (
-            <Ionicons name={focused ? 'call' : 'call-outline'} color={color} size={size} />
+            <Ionicons name={focused ? "call" : "call-outline"} color={color} size={size} />
           ),
         }}
       />
@@ -68,7 +66,7 @@ const MainTabNavigator = () => {
           options={{
             headerShown: false,
             tabBarIcon: ({ color, size, focused }) => (
-              <Ionicons name={focused ? 'shield' : 'shield-outline'} size={size} color={color} />
+              <Ionicons name={focused ? "shield" : "shield-outline"} size={size} color={color} />
             ),
           }}
         />
@@ -79,7 +77,9 @@ const MainTabNavigator = () => {
         component={SettingsNavigator}
         options={{
           headerShown: false, // Hide the header since SettingsNavigator has its own header
-          tabBarIcon: ({ color, size, focused }) => <Ionicons name={focused ? 'settings' : 'settings-outline'} size={size} color={color} />,
+          tabBarIcon: ({ color, size, focused }) => (
+            <Ionicons name={focused ? "settings" : "settings-outline"} size={size} color={color} />
+          ),
         }}
       />
     </Tab.Navigator>

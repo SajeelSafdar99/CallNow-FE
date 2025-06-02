@@ -1,65 +1,82 @@
 import InCallManager from "react-native-incall-manager"
 import { Platform } from "react-native"
-// Assuming SystemSoundManager is a custom module you have.
-// If not, you'll need to implement or replace its functionality.
-// For now, we'll assume it exists and works as intended.
 import SystemSoundManager from "./system-sound" // Ensure this path is correct
+
+const AM_LOG_PREFIX = "[AudioManager]"
 
 class AudioManager {
   constructor() {
     this.isInitialized = false
-    this.currentAudioRoute = "earpiece" // earpiece, speaker, bluetooth, wired
-    console.log("AudioManager: Instance created.")
+    this.currentAudioRoute = "earpiece"
+    this.isRingtonePlaying = false // Track system ringtone state
+    this.isRingbackPlaying = false // Track custom ringback state
+    console.log(`${AM_LOG_PREFIX} Instance created. Initialized: ${this.isInitialized}`)
   }
 
-  async initializeAudioSession(isVideoCall = false, isIncomingCall = false) {
+  async initializeAudioSession(isVideoCall = false, isIncomingCall = false, isPreAcceptedCall = false) {
     try {
       if (this.isInitialized) {
-        console.log("AudioManager: Session already initialized. Reconfiguring for new call type if needed.")
-        // Even if initialized, we might need to adjust settings for the new call
+        console.log(`${AM_LOG_PREFIX} Session already initialized. Reconfiguring for new call type if needed.`)
+        // Potentially stop existing sounds if re-initializing for a new call
+        // await this.stopAllSounds(); // Consider if this is needed or handled elsewhere
       }
 
-      console.log(`AudioManager: Initializing audio session. Video: ${isVideoCall}, Incoming: ${isIncomingCall}`)
+      console.log(
+        `${AM_LOG_PREFIX} Initializing audio session. Video: ${isVideoCall}, Incoming: ${isIncomingCall}, PreAccepted: ${isPreAcceptedCall}`,
+      )
       await InCallManager.start({
         media: isVideoCall ? "video" : "audio",
         auto: true,
-        ringback: "_DEFAULT_", // Let InCallManager handle ringback if desired, or use custom below
+        // If it's an incoming call that's NOT pre-accepted, InCallManager might play a ringtone.
+        // Otherwise, don't specify ringback here to prevent InCallManager from starting one
+        // when the app intends to manage it or when it's a pre-accepted/outgoing call.
+        ringback: isIncomingCall && !isPreAcceptedCall && Platform.OS === "android" ? "_DEFAULT_" : "",
       })
-      console.log("AudioManager: InCallManager started.")
+      console.log(`${AM_LOG_PREFIX} InCallManager started.`)
 
-      if (isIncomingCall) {
-        console.log("AudioManager: Incoming call, starting ringtone.")
-        await this.startRingtone()
+      if (isIncomingCall && !isPreAcceptedCall) {
+        console.log(
+          `${AM_LOG_PREFIX} initializeAudioSession - Condition MET for starting OS ringtone (via SystemSoundManager). isIncomingCall: ${isIncomingCall}, isPreAcceptedCall: ${isPreAcceptedCall}`,
+        )
+        await this.startRingtone() // App-controlled ringtone via SystemSoundManager
       } else {
-        // For outgoing calls, InCallManager's ringback might be used if `ringback: '_DEFAULT_'`
-        // Or you can explicitly start your custom ringback here if needed.
-        // await this.startRingback(); // If you want custom ringback for outgoing
+        console.log(
+          `${AM_LOG_PREFIX} initializeAudioSession - Condition NOT MET for starting OS ringtone directly. isIncomingCall: ${isIncomingCall}, isPreAcceptedCall: ${isPreAcceptedCall}`,
+        )
       }
 
-      if (isVideoCall) {
-        console.log("AudioManager: Video call, setting speaker ON.")
-        await this.setSpeakerOn(true)
+      if (!isPreAcceptedCall) {
+        if (isVideoCall) {
+          console.log(`${AM_LOG_PREFIX} Video call (not pre-accepted), setting speaker ON initially.`)
+          await this.setSpeakerOn(true)
+        } else {
+          console.log(
+            `${AM_LOG_PREFIX} Audio call (not pre-accepted or outgoing), setting speaker OFF (earpiece) initially.`,
+          )
+          await this.setSpeakerOn(false)
+        }
       } else {
-        console.log("AudioManager: Audio call, setting speaker OFF (earpiece).")
-        await this.setSpeakerOn(false)
+        console.log(
+          `${AM_LOG_PREFIX} Pre-accepted call, initial speaker state will be managed by CallScreen's defaults or restored state. Current route: ${this.currentAudioRoute}`,
+        )
       }
 
       this.isInitialized = true
-      console.log("AudioManager: Audio session initialized successfully.")
+      console.log(`${AM_LOG_PREFIX} Audio session initialized successfully.`)
     } catch (error) {
-      console.error("AudioManager: Error initializing audio session:", error)
-      // Don't re-throw, allow app to continue if possible, but log error
+      console.error(`${AM_LOG_PREFIX} Error initializing audio session:`, error)
+      this.isInitialized = false
     }
   }
 
   async setSpeakerOn(enabled) {
     try {
       await InCallManager.setForceSpeakerphoneOn(enabled)
-      this.currentAudioRoute = enabled ? "speaker" : "earpiece" // Simplified assumption
-      console.log(`AudioManager: Speaker ${enabled ? "ON" : "OFF"}. Audio route: ${this.currentAudioRoute}`)
+      this.currentAudioRoute = enabled ? "speaker" : "earpiece"
+      console.log(`${AM_LOG_PREFIX} Speaker ${enabled ? "ON" : "OFF"}. Audio route: ${this.currentAudioRoute}`)
       return true
     } catch (error) {
-      console.error("AudioManager: Error setting speaker:", error)
+      console.error(`${AM_LOG_PREFIX} Error setting speaker:`, error)
       return false
     }
   }
@@ -68,11 +85,11 @@ class AudioManager {
     try {
       const currentSpeakerState = this.currentAudioRoute === "speaker"
       const newSpeakerState = !currentSpeakerState
-      console.log(`AudioManager: Toggling speaker. Current: ${currentSpeakerState}, New: ${newSpeakerState}`)
+      console.log(`${AM_LOG_PREFIX} Toggling speaker. Current: ${currentSpeakerState}, New: ${newSpeakerState}`)
       const success = await this.setSpeakerOn(newSpeakerState)
       return { success, isSpeakerOn: newSpeakerState }
     } catch (error) {
-      console.error("AudioManager: Error toggling speaker:", error)
+      console.error(`${AM_LOG_PREFIX} Error toggling speaker:`, error)
       return { success: false, isSpeakerOn: this.currentAudioRoute === "speaker" }
     }
   }
@@ -80,160 +97,209 @@ class AudioManager {
   async setMicrophoneMute(muted) {
     try {
       await InCallManager.setMicrophoneMute(muted)
-      console.log(`AudioManager: Microphone ${muted ? "muted" : "unmuted"}`)
+      console.log(`${AM_LOG_PREFIX} Microphone ${muted ? "muted" : "unmuted"}`)
       return true
     } catch (error) {
-      console.error("AudioManager: Error setting microphone mute:", error)
+      console.error(`${AM_LOG_PREFIX} Error setting microphone mute:`, error)
       return false
     }
   }
 
   async getAvailableAudioRoutes() {
-    // This is a simplified version. Real implementation might involve native event listeners.
-    console.log("AudioManager: Getting available audio routes (simplified).")
+    console.log(`${AM_LOG_PREFIX} Getting available audio routes (simplified).`)
     const routes = ["earpiece", "speaker"]
-    // InCallManager might provide info on bluetooth/wired connections via events or methods.
-    // For now, this is a placeholder.
-    // if (InCallManager.getIsWiredHeadsetPluggedIn()) routes.push("wired");
-    // if (InCallManager.getIsBluetoothHeadsetPluggedIn()) routes.push("bluetooth");
     return routes
   }
 
   async setAudioRoute(route) {
     try {
-      console.log(`AudioManager: Attempting to set audio route to: ${route}`)
+      console.log(`${AM_LOG_PREFIX} Attempting to set audio route to: ${route}`)
       switch (route) {
         case "speaker":
           await this.setSpeakerOn(true)
           break
         case "earpiece":
-          await this.setSpeakerOn(false) // This typically means turn speaker off
-          // InCallManager usually defaults to earpiece if speaker is off and no other device.
-          this.currentAudioRoute = "earpiece"
-          break
         case "bluetooth":
-          // InCallManager might handle some of this automatically when a BT device connects.
-          // Explicit control might be needed via native modules for specific BT device selection.
-          await InCallManager.setForceSpeakerphoneOn(false) // Ensure speaker is off
-          // Potentially: InCallManager.chooseBluetoothDevice(deviceId);
-          this.currentAudioRoute = "bluetooth"
-          console.warn("AudioManager: Bluetooth routing is complex and may require native implementation.")
-          break
         case "wired":
-          // InCallManager usually handles this automatically when wired headset is plugged in.
-          await InCallManager.setForceSpeakerphoneOn(false) // Ensure speaker is off
-          this.currentAudioRoute = "wired"
+          await this.setSpeakerOn(false)
+          if (route === "bluetooth" || route === "wired") {
+            console.warn(
+              `${AM_LOG_PREFIX} Set speaker OFF for ${route}. Actual device selection depends on OS and connected peripherals.`,
+            )
+          }
           break
         default:
-          console.warn(`AudioManager: Unknown audio route: ${route}. Defaulting to earpiece.`)
+          console.warn(`${AM_LOG_PREFIX} Unknown audio route: ${route}. Defaulting to earpiece.`)
           await this.setSpeakerOn(false)
-          this.currentAudioRoute = "earpiece"
       }
-      console.log(`AudioManager: Audio route changed to: ${this.currentAudioRoute}`)
+      console.log(
+        `${AM_LOG_PREFIX} Audio route set command issued for: ${route}. Current internal route: ${this.currentAudioRoute}`,
+      )
       return true
     } catch (error) {
-      console.error(`AudioManager: Error setting audio route to ${route}:`, error)
+      console.error(`${AM_LOG_PREFIX} Error setting audio route to ${route}:`, error)
       return false
     }
   }
 
   enableProximitySensor(enabled) {
-    // InCallManager's `auto: true` in start() should handle this.
-    // Explicit control might be needed if `auto` is false or for specific behaviors.
     try {
       if (Platform.OS === "android") {
-        if (enabled) {
-          // InCallManager.turnScreenOff(); // This is an action, not enabling the sensor
-          console.log(
-            "AudioManager: Proximity sensor effect (screen off) would be active on Android if call is ongoing.",
-          )
-        } else {
-          // InCallManager.turnScreenOn();
-          console.log("AudioManager: Proximity sensor effect (screen on) would be active on Android.")
-        }
+        InCallManager.setProximitySensorOn(enabled)
+        console.log(`${AM_LOG_PREFIX} Proximity sensor explicit control set to: ${enabled} (Android).`)
+      } else {
+        console.log(
+          `${AM_LOG_PREFIX} Proximity sensor control is typically automatic on iOS or managed by InCallManager's 'auto' mode.`,
+        )
       }
-      // iOS handles proximity automatically with an active audio session.
-      console.log(`AudioManager: Proximity sensor management typically handled by InCallManager 'auto' mode.`)
     } catch (error) {
-      console.error("AudioManager: Error with proximity sensor related action:", error)
+      console.error(`${AM_LOG_PREFIX} Error with proximity sensor action:`, error)
     }
   }
 
-  async startRingback(type = "_DEFAULT_") {
-    // type can be '_DEFAULT_', '_BUNDLE_', or a filename
+  async startRingback(ringbackFileName = "my_custom_ringback.mav") {
+    if (this.isRingbackPlaying) {
+      console.log(`${AM_LOG_PREFIX} startRingback called but already playing. Skipping.`)
+      return
+    }
+    console.log(`${AM_LOG_PREFIX} startRingback INVOKED (for caller's device). File: ${ringbackFileName}`)
     try {
-      console.log(`AudioManager: Starting ringback tone (type: ${type}).`)
-      await InCallManager.startRingback(type) // Use InCallManager's ringback
+      // Ensure InCallManager is not set to play its own ringback if we use a custom one
+      // This might require InCallManager.start({ ringback: '' }) before this.
+      await InCallManager.startRingback(ringbackFileName)
+      this.isRingbackPlaying = true
+      console.log(`${AM_LOG_PREFIX} Custom ringback started. isRingbackPlaying: ${this.isRingbackPlaying}`)
     } catch (error) {
-      console.error("AudioManager: Error starting ringback:", error)
+      console.error(`${AM_LOG_PREFIX} Error starting custom ringback:`, error)
+      this.isRingbackPlaying = false
     }
   }
 
   async stopRingback() {
+    if (!this.isRingbackPlaying) {
+      console.log(`${AM_LOG_PREFIX} stopRingback called but not playing. Skipping.`)
+      return
+    }
+    console.log(`${AM_LOG_PREFIX} stopRingback INVOKED.`)
     try {
-      console.log("AudioManager: Stopping ringback tone.")
       await InCallManager.stopRingback()
+      this.isRingbackPlaying = false
+      console.log(`${AM_LOG_PREFIX} Custom ringback stopped. isRingbackPlaying: ${this.isRingbackPlaying}`)
     } catch (error) {
-      console.error("AudioManager: Error stopping ringback:", error)
+      console.error(`${AM_LOG_PREFIX} Error stopping custom ringback:`, error)
+      this.isRingbackPlaying = false
     }
   }
 
   async startRingtone(type = "_DEFAULT_") {
-    // type can be '_DEFAULT_', '_BUNDLE_', or a filename
+    if (this.isRingtonePlaying) {
+      console.log(`${AM_LOG_PREFIX} startRingtone called but already playing. Skipping.`)
+      return
+    }
+    console.log(`${AM_LOG_PREFIX} startRingtone INVOKED (via SystemSoundManager). Type: ${type}`)
     try {
-      console.log(`AudioManager: Starting ringtone (type: ${type}).`)
-      // For incoming calls, InCallManager can also play a ringtone.
-      // If you use `SystemSoundManager`, ensure it doesn't conflict.
-      // await InCallManager.startRingtone(type);
-      // OR using your SystemSoundManager:
-      await SystemSoundManager.playDefaultRingtone() // Ensure this method exists and works
-      console.log("AudioManager: System ringtone started via SystemSoundManager.")
+      await SystemSoundManager.playDefaultRingtone()
+      this.isRingtonePlaying = true
+      console.log(
+        `${AM_LOG_PREFIX} System ringtone started via SystemSoundManager. isRingtonePlaying: ${this.isRingtonePlaying}`,
+      )
     } catch (error) {
-      console.error("AudioManager: Error starting ringtone:", error)
+      console.error(`${AM_LOG_PREFIX} Error starting system ringtone:`, error)
+      this.isRingtonePlaying = false
     }
   }
 
-  async stopRingtone() {
+  async stopRingtone(type = "") {
+    const wasRingtonePlayingBeforeAttempt = this.isRingtonePlaying
+    if (!wasRingtonePlayingBeforeAttempt && type !== "force_stop") {
+      console.log(`${AM_LOG_PREFIX} stopRingtone called but not playing (or not forced). Skipping.`)
+      if (type !== "force_stop") return
+    }
+    console.log(
+      `${AM_LOG_PREFIX} stopRingtone INVOKED. isRingtonePlaying (before stop): ${wasRingtonePlayingBeforeAttempt}, Type: ${type}`,
+    )
     try {
-      console.log("AudioManager: Stopping ringtone.")
-      // await InCallManager.stopRingtone();
-      // OR using your SystemSoundManager:
-      await SystemSoundManager.stopRingtone() // Ensure this method exists and works
-      console.log("AudioManager: System ringtone stopped via SystemSoundManager.")
+      // Stop ringtone started by SystemSoundManager
+      await SystemSoundManager.stopRingtone()
+      this.isRingtonePlaying = false // Assume SystemSoundManager part is now handled
+      console.log(
+        `${AM_LOG_PREFIX} System ringtone (via SystemSoundManager) commanded to stop. isRingtonePlaying set to: ${this.isRingtonePlaying}`,
+      )
+
+      // Also stop any ringback/ringtone potentially started by InCallManager
+      // This is important if InCallManager.start was called with ringback: '_DEFAULT_'
+      console.log(`${AM_LOG_PREFIX} Attempting to stop InCallManager's ringback/default ringtone as a precaution.`)
+      await InCallManager.stopRingback() // This stops sounds started by InCallManager's ringback option
+      this.isRingbackPlaying = false // Update this state too, as InCallManager's ringback might have been active
+      console.log(
+        `${AM_LOG_PREFIX} InCallManager.stopRingback() called. isRingbackPlaying set to: ${this.isRingbackPlaying}`,
+      )
     } catch (error) {
-      console.error("AudioManager: Error stopping ringtone:", error)
+      console.error(`${AM_LOG_PREFIX} Error stopping system ringtone and/or InCallManager ringback:`, error)
+      // Ensure states are reset on error to prevent them from being stuck as true
+      this.isRingtonePlaying = false
+      this.isRingbackPlaying = false
     }
   }
 
   async stopAllSounds() {
-    console.log("AudioManager: Stopping all sounds (ringback and ringtone).")
+    console.log(
+      `${AM_LOG_PREFIX} Stopping all sounds. Ringback playing: ${this.isRingbackPlaying}, Ringtone playing: ${this.isRingtonePlaying}`,
+    )
     try {
-      await this.stopRingback()
-      await this.stopRingtone()
-      console.log("AudioManager: All sounds stopped.")
+      // Call the refined stopRingtone which now handles both SystemSoundManager and InCallManager ringback
+      await this.stopRingtone("force_stop")
+
+      // Explicitly stop custom ringback if it was managed separately and state might be out of sync
+      if (this.isRingbackPlaying) {
+        // This might be redundant if stopRingtone already called InCallManager.stopRingback()
+        // but can be a safeguard.
+        console.log(`${AM_LOG_PREFIX} stopAllSounds: Explicitly calling InCallManager.stopRingback() again if needed.`)
+        await InCallManager.stopRingback()
+        this.isRingbackPlaying = false
+      }
+
+      // Fallback in case state tracking was off or for other sounds InCallManager might handle
+      // This is a bit broad but can help in complex scenarios.
+      // await InCallManager.stop(); // This is too aggressive here, use in cleanup()
+      // await InCallManager.start({ media: 'audio', auto: true, ringback: '' }); // Reset InCallManager state without sound
+
+      console.log(`${AM_LOG_PREFIX} All sounds commanded to stop.`)
     } catch (error) {
-      console.error("AudioManager: Error in stopAllSounds:", error)
+      console.error(`${AM_LOG_PREFIX} Error in stopAllSounds:`, error)
+      this.isRingtonePlaying = false
+      this.isRingbackPlaying = false
     }
   }
 
   async cleanup() {
     try {
       if (!this.isInitialized) {
-        console.log("AudioManager: Cleanup called but not initialized. Skipping.")
+        console.log(`${AM_LOG_PREFIX} Cleanup called but not initialized. Skipping.`)
         return
       }
-      console.log("AudioManager: Cleaning up audio session.")
+      console.log(`${AM_LOG_PREFIX} Cleaning up audio session.`)
 
-      await this.stopAllSounds() // Use the new method
+      await this.stopAllSounds()
+
+      await InCallManager.setForceSpeakerphoneOn(false)
+      await InCallManager.setMicrophoneMute(false)
+      console.log(`${AM_LOG_PREFIX} Speaker forced OFF and Mic UNMUTED before stopping InCallManager.`)
 
       await InCallManager.stop()
-      console.log("AudioManager: InCallManager stopped.")
+      console.log(`${AM_LOG_PREFIX} InCallManager stopped.`)
 
       this.isInitialized = false
-      this.currentAudioRoute = "earpiece" // Reset to default
-      console.log("AudioManager: Audio session cleaned up successfully.")
+      this.currentAudioRoute = "earpiece"
+      this.isRingtonePlaying = false
+      this.isRingbackPlaying = false
+      console.log(`${AM_LOG_PREFIX} Audio session cleaned up successfully. States reset.`)
     } catch (error) {
-      console.error("AudioManager: Error cleaning up audio session:", error)
+      console.error(`${AM_LOG_PREFIX} Error cleaning up audio session:`, error)
+      this.isInitialized = false
+      this.currentAudioRoute = "earpiece"
+      this.isRingtonePlaying = false
+      this.isRingbackPlaying = false
     }
   }
 
@@ -242,8 +308,8 @@ class AudioManager {
   }
 
   isSpeakerphoneOn() {
-    // Renamed for clarity to match InCallManager
-    return this.currentAudioRoute === "speaker"
+    const isSpeaker = this.currentAudioRoute === "speaker"
+    return isSpeaker
   }
 }
 

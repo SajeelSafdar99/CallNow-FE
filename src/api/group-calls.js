@@ -97,22 +97,6 @@ export const updateCallStatus = async (groupCallId, { status, reason, endTime, t
 }
 
 /**
- * Toggles screen sharing for the current user in a group call.
- * @param {string} groupCallId - The ID of the group call.
- * @param {boolean} isSharing - True to start sharing, false to stop.
- * @returns {Promise<object>} The API response.
- */
-export const toggleScreenSharing = async (groupCallId, isSharing) => {
-  try {
-    const response = await apiClient.put(`${API_BASE_URL}/group-calls/${groupCallId}/screen`, { isSharing })
-    return response.data
-  } catch (error) {
-    console.error("Error toggling screen sharing:", error.response?.data || error.message)
-    return error.response?.data || { success: false, message: error.message }
-  }
-}
-
-/**
  * Fetches the details of a specific group call.
  * (This endpoint is not in the router, but often useful)
  * @param {string} groupCallId - The ID of the group call.

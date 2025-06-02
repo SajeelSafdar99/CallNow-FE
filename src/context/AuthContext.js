@@ -1,3 +1,4 @@
+// Using the version from your attachment "AuthContext-kyIA5r0SwWHdZuGnO2zkKGFoK6Ymsy.js"
 "use client"
 
 import React, { createContext, useReducer, useEffect, useMemo } from "react"
@@ -408,12 +409,7 @@ export const AuthProvider = ({ children }) => {
         if (state.token && isTokenExpired(state.token)) {
           console.log("Token expired, logging out...")
           // Directly call the logout logic defined within this useMemo'd object
-          // This assumes `authActions.logout` will be available once this object is fully defined.
-          // A potentially cleaner way is to define logout outside and call it,
-          // or ensure this specific `logout` is stable.
-          // For now, we'll assume it resolves correctly.
           await (async () => {
-            // IIFE to call the logout defined in this scope
             try {
               console.log("Starting logout process (from checkTokenExpiration)...")
               dispatch({ type: "SET_LOADING", payload: true })
@@ -573,19 +569,19 @@ export const AuthProvider = ({ children }) => {
         dispatch({ type: "RESTORE_TOKEN", payload: authData })
       },
     }),
-    [state, dispatch, isTokenExpired],
-  ) // Add `isTokenExpired` to dependencies if it's not stable or defined outside
+    [state, dispatch], // Removed isTokenExpired as it's defined in the outer scope
+  )
 
   // Context value
   const contextValue = useMemo(
     () => ({
       state,
-      dispatch, // dispatch from useReducer is stable
-      authContext: authActions, // authActions is now memoized
-      ...authActions, // Spread the memoized authActions
+      dispatch,
+      authContext: authActions,
+      ...authActions,
     }),
     [state, authActions],
-  ) // Dependencies are state and the memoized authActions
+  )
 
   return <AuthContext.Provider value={contextValue}>{children}</AuthContext.Provider>
 }

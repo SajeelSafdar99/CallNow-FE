@@ -51,7 +51,7 @@ const API_ENDPOINTS = {
   SEND_MESSAGE: "/messages",
   GET_MESSAGES: "/messages",
   DELETE_MESSAGE: "/messages",
-  MARK_AS_DELIVERED: "/messages/deliver",
+  MARK_AS_DELIVERED: "/messages",
 
   // Call endpoints
   INITIATE_CALL: "/calls",
