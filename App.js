@@ -279,29 +279,29 @@ const AppContent = () => {
         }
     }, [authState.isAuthenticated, pushNotificationsInitialized])
 
-    if (authState.isLoading) {
-        return (
-            <View
-                style={{
-                    flex: 1,
-                    justifyContent: "center",
-                    alignItems: "center",
-                    backgroundColor: currentTheme.background,
-                }}
-            >
-                <ActivityIndicator size="large" color={currentTheme.primary} />
-                <Text
-                    style={{
-                        marginTop: 10,
-                        color: currentTheme.text,
-                        fontSize: 16,
-                    }}
-                >
-                    Loading...
-                </Text>
-            </View>
-        )
-    }
+    // if (authState.isLoading) {
+    //     return (
+    //         <View
+    //             style={{
+    //                 flex: 1,
+    //                 justifyContent: "center",
+    //                 alignItems: "center",
+    //                 backgroundColor: currentTheme.background,
+    //             }}
+    //         >
+    //             <ActivityIndicator size="large" color={currentTheme.primary} />
+    //             <Text
+    //                 style={{
+    //                     marginTop: 10,
+    //                     color: currentTheme.text,
+    //                     fontSize: 16,
+    //                 }}
+    //             >
+    //                 Loading...
+    //             </Text>
+    //         </View>
+    //     )
+    // }
 
     return (
         <>

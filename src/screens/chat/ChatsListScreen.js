@@ -11,21 +11,20 @@ import {
   ActivityIndicator,
   RefreshControl,
 } from "react-native"
-import Ionicons from "react-native-vector-icons/Ionicons"
+import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useNavigation } from "@react-navigation/native"
 import { AuthContext } from "../../context/AuthContext"
-import { SocketContext } from "../../context/SocketContext" // Assuming this provides onlineUserIds
+import { SocketContext } from "../../context/SocketContext"
 import { ThemeContext } from "../../context/ThemeContext"
 import { getTheme } from "../../utils/theme"
 import * as ConversationsAPI from "../../api/conversations"
 import { formatDate } from "../../utils/formatters"
-import { API_BASE_URL_FOR_MEDIA } from "../../config/api"
+import {API_BASE_URL_FOR_MEDIA} from '../../config/api'; // Import API base URL
 
 const ChatsListScreen = () => {
   const navigation = useNavigation()
   const { state: authState } = useContext(AuthContext)
-  // Assume SocketContext provides onlineUserIds (e.g., a Set of user IDs)
-  const { socket, isConnected, onlineUserIds } = useContext(SocketContext)
+  const { socket, isConnected } = useContext(SocketContext)
   const { theme } = useContext(ThemeContext)
   const currentTheme = getTheme(theme)
 
@@ -56,81 +55,65 @@ const ChatsListScreen = () => {
   // Socket event listeners
   useEffect(() => {
     if (socket && isConnected) {
-      // Listen for new messages
-      const handleReceiveMessage = (message) => {
-        setConversations((prevConversations) => {
-          // Try to find the conversation and update it
-          const updatedConversations = prevConversations.map((conv) => {
-            if (conv._id === message.conversationId) {
-              return {
-                ...conv,
-                lastMessage: message,
-                // Increment unread count for the current user if the message is not from them
-                unreadCounts:
-                    message.sender._id !== authState.user.id
-                        ? conv.unreadCounts.map((uc) => {
-                          if (uc.user === authState.user.id) {
-                            return { ...uc, count: (uc.count || 0) + 1 }
-                          }
-                          return uc
-                        })
-                        : conv.unreadCounts,
-              }
-            }
-            return conv
-          })
-
-          // Sort conversations to bring the one with the new message to the top
-          return updatedConversations.sort((a, b) => {
-            const timeA = a.lastMessage ? new Date(a.lastMessage.createdAt).getTime() : 0
-            const timeB = b.lastMessage ? new Date(b.lastMessage.createdAt).getTime() : 0
-            return timeB - timeA
-          })
-        })
-      }
-      socket.on("receive-message", handleReceiveMessage)
-
-      // Listen for message read status
-      const handleMessageRead = ({ conversationId, userId }) => {
-        // This event means 'userId' has read messages in 'conversationId'
-        // If the current user is 'userId', it means they read it on another device.
-        // If not, it means the other participant read the current user's messages.
-        setConversations((prevConversations) => {
-          return prevConversations.map((conv) => {
-            if (conv._id === conversationId) {
-              // If the current user is the one who read the messages
-              if (userId === authState.user.id) {
+      try {
+        // Listen for new messages
+        socket.on("receive-message", (message) => {
+          // Update conversation with new message
+          setConversations((prevConversations) => {
+            return prevConversations.map((conv) => {
+              if (conv._id === message.conversationId) {
                 return {
                   ...conv,
-                  unreadCounts: conv.unreadCounts.map((uc) =>
-                      uc.user === authState.user.id ? { ...uc, count: 0 } : uc,
-                  ),
+                  lastMessage: message,
+                  unreadCounts: conv.unreadCounts.map((uc) => {
+                    if (uc.user === authState.user.id) {
+                      return { ...uc, count: uc.count + 1 }
+                    }
+                    return uc
+                  }),
                 }
-              } else {
-                // If another user in the chat read the messages,
-                // this typically means messages sent by authState.user are now read by 'userId'.
-                // The UI usually reflects this inside the chat screen (e.g., read receipts).
-                // For the chats list, unreadCounts are for messages *received by* authState.user.
-                // So, this event might not directly change unreadCounts for authState.user here,
-                // unless your unreadCounts logic is different.
-                // Assuming unreadCounts in conversation list is for *this* user.
               }
-            }
-            return conv
+              return conv
+            })
           })
         })
-      }
-      socket.on("message-read", handleMessageRead)
 
-      // Placeholder for user status updates - this would update onlineUserIds in SocketContext
-      // Example: socket.on('user_status_update', (statusData) => { /* update onlineUserIds in SocketContext */ });
+        // Listen for message read status
+        socket.on("message-read", ({ conversationId, userId }) => {
+          if (userId !== authState.user.id) {
+            // Update read status for messages in this conversation
+            setConversations((prevConversations) => {
+              return prevConversations.map((conv) => {
+                if (conv._id === conversationId) {
+                  return {
+                    ...conv,
+                    unreadCounts: conv.unreadCounts.map((uc) => {
+                      if (uc.user === userId) {
+                        return { ...uc, count: 0 }
+                      }
+                      return uc
+                    }),
+                  }
+                }
+                return conv
+              })
+            })
+          }
+        })
 
-      return () => {
-        socket.off("receive-message", handleReceiveMessage)
-        socket.off("message-read", handleMessageRead)
+        return () => {
+          try {
+            socket.off("receive-message")
+            socket.off("message-read")
+          } catch (error) {
+            console.error("Error removing socket listeners:", error)
+          }
+        }
+      } catch (error) {
+        console.error("Error setting up socket listeners:", error)
       }
     }
-  }, [socket, isConnected, authState.user.id])
+  }, [socket, isConnected])
 
   // Handle refresh
   const onRefresh = () => {
@@ -141,18 +124,6 @@ const ChatsListScreen = () => {
   // Navigate to chat screen
   const handleChatPress = (conversation) => {
     navigation.navigate("Chat", { conversation })
-    // Mark conversation as read for the current user locally
-    setConversations((prev) =>
-        prev.map((conv) => {
-          if (conv._id === conversation._id) {
-            return {
-              ...conv,
-              unreadCounts: conv.unreadCounts.map((uc) => (uc.user === authState.user.id ? { ...uc, count: 0 } : uc)),
-            }
-          }
-          return conv
-        }),
-    )
   }
 
   // Navigate to contacts screen to start a new chat
@@ -162,20 +133,22 @@ const ChatsListScreen = () => {
 
   // Render conversation item
   const renderConversationItem = ({ item }) => {
-    let name,
-        image,
-        otherParticipantId = null
+    // Get conversation name and image
+    let name, image
     if (item.isGroup) {
       name = item.groupName
       image = item.groupImage || null
     } else {
+      // Find the other participant (not the current user)
       const otherParticipant = item.participants.find((p) => p._id !== authState.user.id)
       name = otherParticipant?.name || "Unknown"
       image = otherParticipant?.profilePicture || null
-      otherParticipantId = otherParticipant?._id
     }
 
+    // Get unread count for current user
     const unreadCount = item.unreadCounts.find((uc) => uc.user === authState.user.id)?.count || 0
+
+    // Get last message preview
     let lastMessagePreview = ""
     if (item.lastMessage) {
       if (item.lastMessage.contentType === "text") {
@@ -193,103 +166,91 @@ const ChatsListScreen = () => {
       }
     }
 
-    // Check if the other user is online (for one-on-one chats)
-    const isUserOnline = !item.isGroup && otherParticipantId && onlineUserIds && onlineUserIds.has(otherParticipantId)
-
     return (
-        <TouchableOpacity
-            style={[
-              styles.conversationItem,
-              {
-                borderBottomColor: currentTheme.border,
-                backgroundColor: currentTheme.card,
-              },
-            ]}
-            onPress={() => handleChatPress(item)}
-        >
-          <View style={styles.avatarContainer}>
-            {image ? (
-                <Image source={{ uri: `${API_BASE_URL_FOR_MEDIA}${image}` }} style={styles.avatar} />
-            ) : (
-                <View style={[styles.avatar, styles.defaultAvatar, { backgroundColor: currentTheme.primary }]}>
-                  <Text style={styles.avatarText}>{name.charAt(0).toUpperCase()}</Text>
-                </View>
+      <TouchableOpacity
+        style={[
+          styles.conversationItem,
+          {
+            borderBottomColor: currentTheme.border,
+            backgroundColor: currentTheme.card
+          }
+        ]}
+        onPress={() => handleChatPress(item)}
+      >
+        <View style={styles.avatarContainer}>
+          {image ? (
+            <Image source={{ uri: `${API_BASE_URL_FOR_MEDIA}${image}` }} style={styles.avatar} />
+          ) : (
+            <View style={[styles.avatar, styles.defaultAvatar, { backgroundColor: currentTheme.primary }]}>
+              <Text style={styles.avatarText}>{name.charAt(0).toUpperCase()}</Text>
+            </View>
+          )}
+        </View>
+        <View style={styles.conversationInfo}>
+          <View style={styles.conversationHeader}>
+            <Text style={[styles.conversationName, { color: currentTheme.text }]} numberOfLines={1}>
+              {name}
+            </Text>
+            {item.lastMessage && (
+              <Text style={[styles.conversationTime, { color: currentTheme.placeholder }]}>
+                {formatDate(item.lastMessage.createdAt)}
+              </Text>
             )}
-            {isUserOnline && <View style={[styles.onlineIndicator, { borderColor: currentTheme.card }]} />}
           </View>
-          <View style={styles.conversationInfo}>
-            <View style={styles.conversationHeader}>
-              <Text style={[styles.conversationName, { color: currentTheme.text }]} numberOfLines={1}>
-                {name}
-              </Text>
-              {item.lastMessage && (
-                  <Text style={[styles.conversationTime, { color: currentTheme.placeholder }]}>
-                    {formatDate(item.lastMessage.createdAt)}
-                  </Text>
-              )}
-            </View>
-            <View style={styles.conversationFooter}>
-              <Text
-                  style={[
-                    styles.lastMessage,
-                    { color: unreadCount > 0 ? currentTheme.text : currentTheme.placeholder },
-                    unreadCount > 0 && styles.unreadMessageText,
-                  ]}
-                  numberOfLines={1}
-              >
-                {lastMessagePreview || "No messages yet"}
-              </Text>
-              {unreadCount > 0 && (
-                  <View style={[styles.unreadBadge, { backgroundColor: currentTheme.primary }]}>
-                    <Text style={styles.unreadCount}>{unreadCount > 99 ? "99+" : unreadCount}</Text>
-                  </View>
-              )}
-            </View>
+          <View style={styles.conversationFooter}>
+            <Text style={[styles.lastMessage, { color: currentTheme.placeholder }]} numberOfLines={1}>
+              {lastMessagePreview || "No messages yet"}
+            </Text>
+            {unreadCount > 0 && (
+              <View style={[styles.unreadBadge, { backgroundColor: currentTheme.primary }]}>
+                <Text style={styles.unreadCount}>{unreadCount}</Text>
+              </View>
+            )}
           </View>
-        </TouchableOpacity>
+        </View>
+      </TouchableOpacity>
     )
   }
 
+  // Loading state
   if (isLoading) {
     return (
-        <View style={[styles.loadingContainer, { backgroundColor: currentTheme.background }]}>
-          <ActivityIndicator size="large" color={currentTheme.primary} />
-        </View>
+      <View style={[styles.loadingContainer, { backgroundColor: currentTheme.background }]}>
+        <ActivityIndicator size="large" color={currentTheme.primary} />
+      </View>
     )
   }
 
   return (
-      <View style={[styles.container, { backgroundColor: currentTheme.background }]}>
-        <FlatList
-            data={conversations.sort((a, b) => {
-              // Ensure sorting is applied initially and after updates
-              const timeA = a.lastMessage ? new Date(a.lastMessage.createdAt).getTime() : 0
-              const timeB = b.lastMessage ? new Date(b.lastMessage.createdAt).getTime() : 0
-              return timeB - timeA
-            })}
-            renderItem={renderConversationItem}
-            keyExtractor={(item) => item._id}
-            refreshControl={
-              <RefreshControl
-                  refreshing={refreshing}
-                  onRefresh={onRefresh}
-                  colors={[currentTheme.primary]}
-                  tintColor={currentTheme.primary}
-              />
-            }
-            ListEmptyComponent={
-              <View style={styles.emptyContainer}>
-                <Text style={[styles.emptyText, { color: currentTheme.primary }]}>No conversations yet</Text>
-                <Text style={[styles.emptySubtext, { color: currentTheme.placeholder }]}>
-                  Start a new chat by tapping the button below
-                </Text>
-              </View>
-            }
-        />
-        <TouchableOpacity style={[styles.fab, { backgroundColor: currentTheme.primary }]} onPress={handleNewChat}>
-          <Ionicons name="chatbubble-ellipses" size={24} color="#FFFFFF" />
-        </TouchableOpacity>
-      </View>
+    <View style={[styles.container, { backgroundColor: currentTheme.background }]}>
+      <FlatList
+        data={conversations}
+        renderItem={renderConversationItem}
+        keyExtractor={(item) => item._id}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={[currentTheme.primary]}
+            tintColor={currentTheme.primary}
+          />
+        }
+        ListEmptyComponent={
+          <View style={styles.emptyContainer}>
+            <Text style={[styles.emptyText, { color: currentTheme.primary }]}>No conversations yet</Text>
+            <Text style={[styles.emptySubtext, { color: currentTheme.placeholder }]}>
+              Start a new chat by tapping the button below
+            </Text>
+          </View>
+        }
+      />
+      <TouchableOpacity
+        style={[styles.fab, { backgroundColor: currentTheme.primary }]}
+        onPress={handleNewChat}
+      >
+        <Ionicons name="chatbubble-ellipses" size={24} color="#FFFFFF" />
+      </TouchableOpacity>
+    </View>
   )
 }
 
@@ -304,13 +265,11 @@ const styles = StyleSheet.create({
   },
   conversationItem: {
     flexDirection: "row",
-    paddingHorizontal: 15,
-    paddingVertical: 12, // Adjusted padding
+    padding: 15,
     borderBottomWidth: 1,
   },
   avatarContainer: {
     marginRight: 15,
-    position: "relative", // For positioning the online indicator
   },
   avatar: {
     width: 50,
@@ -326,17 +285,6 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: "bold",
   },
-  onlineIndicator: {
-    position: "absolute",
-    bottom: 0,
-    right: 0,
-    width: 14, // Slightly larger dot
-    height: 14,
-    borderRadius: 7,
-    backgroundColor: "#4CAF50", // A standard green color
-    borderWidth: 2,
-    // borderColor is set dynamically using currentTheme.card
-  },
   conversationInfo: {
     flex: 1,
     justifyContent: "center",
@@ -344,11 +292,11 @@ const styles = StyleSheet.create({
   conversationHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
-    marginBottom: 4, // Adjusted margin
+    marginBottom: 5,
   },
   conversationName: {
     fontSize: 16,
-    fontWeight: "600", // Slightly bolder
+    fontWeight: "bold",
     flex: 1,
   },
   conversationTime: {
@@ -362,11 +310,6 @@ const styles = StyleSheet.create({
   lastMessage: {
     fontSize: 14,
     flex: 1,
-    marginRight: 5, // Add some space before unread badge
-  },
-  unreadMessageText: {
-    // Style for unread message text
-    fontWeight: "bold",
   },
   unreadBadge: {
     borderRadius: 12,
@@ -374,7 +317,7 @@ const styles = StyleSheet.create({
     height: 24,
     justifyContent: "center",
     alignItems: "center",
-    paddingHorizontal: 6, // Adjusted padding
+    paddingHorizontal: 5,
   },
   unreadCount: {
     color: "#FFFFFF",

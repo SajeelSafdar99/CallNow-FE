@@ -1281,7 +1281,7 @@ const ChatScreen = () => {
         navigation.setOptions({
           headerLeft: () => (
             <TouchableOpacity style={styles.headerButton} onPress={exitSelectionMode}>
-              <Ionicons name="arrow-back" size={24} color={currentTheme.primary} />
+              <Ionicons name="arrow-back" size={24} color="#fff" />
             </TouchableOpacity>
           ),
           headerTitle: () => (
@@ -1302,7 +1302,7 @@ const ChatScreen = () => {
               </TouchableOpacity>
 
               <TouchableOpacity style={styles.headerButton} onPress={handleDeleteSelected}>
-                <Ionicons name="trash" size={24} color={currentTheme.primary} />
+                <Ionicons name="trash" size={24} color="#fff" />
               </TouchableOpacity>
             </View>
           ),
